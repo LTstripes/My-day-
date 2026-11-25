@@ -1,11 +1,16 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8">
-  <title>My Day</title>
-</head>
-<body>
-  <h1>My Day</h1>
-  <a href="./prototype/">Открыть макет</a>
-</body>
-</html>
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin-when-cross-origin"><title>My Day — первый проход</title>
+<style>
+:root{font:16px/1.55 system-ui,sans-serif;color-scheme:light dark;--bg:#eff3ef;--paper:#fff;--ink:#223b31;--muted:#5c7067;--line:#d6e0d9;--accent:#28674e;--on:#fff} @media(prefers-color-scheme:dark){:root{--bg:#101b16;--paper:#1d2a23;--ink:#e3f0e8;--muted:#a8baaf;--line:#3a4b40;--accent:#a5d6b8;--on:#183d2a}} *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}main{max-width:960px;margin:auto;padding:32px 18px}header{margin-bottom:24px}h1{font-size:2rem;letter-spacing:-.04em;margin:4px 0}h2{font-size:1.12rem;margin:0 0 12px}p{margin:8px 0}small,.muted{color:var(--muted)}section{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:14px}button,input,textarea{font:inherit}button{background:var(--accent);color:var(--on);border:0;border-radius:9px;padding:10px 15px;cursor:pointer;min-height:44px}button.secondary{background:transparent;color:var(--ink);border:1px solid var(--line)}button:disabled{opacity:.45;cursor:default}input,textarea{width:100%;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:10px;border-radius:9px}label{display:block;font-size:.86rem;margin:12px 0 4px}textarea{min-height:110px;resize:vertical}a{color:var(--accent)}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.grid section{margin:0}pre{min-height:80px;max-height:45vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.5 system-ui,sans-serif;background:var(--bg);border-radius:9px;padding:12px}.status{border-left:3px solid var(--accent);padding:8px 12px;white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:18px}.error{border-color:#c56d5b}.meta{font-size:.85rem;overflow-wrap:anywhere}[hidden]{display:none!important}@media(max-width:680px){main{padding:22px 12px}.grid{grid-template-columns:1fr}section{padding:15px}}
+</style>
+<script src="https://accounts.google.com/gsi/client" defer></script>
+<script src="https://apis.google.com/js/api.js" defer></script>
+<script type="module" src="./web/app.js"></script>
+</head><body><main>
+<header><small>MY DAY · техническая проба 0.1</small><h1>Мой день</h1><p>Первое настоящее подключение к Google Drive. Пока только тестовый файл.</p><a href="./prototype/">Открыть концептуальный макет</a></header>
+<div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div>
+<section><h2>1. Подключение</h2><p class="muted">Ключ Picker вводится здесь и остаётся в памяти страницы. Не вводи Client Secret или ключи моделей.</p><label for="key">Ограниченный API key My Day Picker</label><input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…"><label for="project">Номер Google Cloud project (проверь при необходимости)</label><input id="project" inputmode="numeric" value="327713401108"><div class="actions"><button id="connect" disabled>Подключить Google Drive</button><button id="disconnect" class="secondary" disabled>Отключиться</button></div></section>
+<section><h2>2. Тестовая заметка</h2><p>Скачай <a href="./web/My-Day-test.md" download="My-Day-test.md">My-Day-test.md</a>, загрузи его в личный Google Drive через обычную загрузку файла (не преобразовывай в Google Docs). Затем выбери его здесь.</p><div class="actions"><button id="pick" disabled>Выбрать файл</button><button id="refresh" class="secondary" disabled>Обновить</button></div><p id="file" class="meta muted">Файл не выбран</p><a id="drive-link" hidden target="_blank" rel="noopener noreferrer">Открыть файл в Drive</a></section>
+<div class="grid"><section><h2>3. Добавить мысль</h2><label for="thought">Только тестовый текст, без личных данных</label><textarea id="thought" maxlength="3000" placeholder="Проверка My Day" disabled></textarea><div class="actions"><button id="save" disabled>Добавить в Drive</button><button id="discard" class="secondary" disabled>Очистить черновик</button></div><p id="draft" class="muted meta">Черновик ещё не создан.</p></section><section><h2>4. Содержимое на Google Drive</h2><p id="fresh" class="muted meta">Не прочитано</p><pre id="preview">Выбери тестовый файл.</pre></section></div>
+<p class="muted meta">Токен не сохраняется между сеансами. Тестовый черновик хранится в браузере до подтверждённой записи. Обработка моделью и подключение настоящего Inbox — после проверки. Сайт не отправляет заметки на собственный сервер.</p>
+</main></body></html>
