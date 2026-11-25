@@ -5,11 +5,12 @@
 .check{display:flex;align-items:center;gap:10px;min-height:44px;font-size:1rem;cursor:pointer}.check input{width:20px;height:20px;margin:0;accent-color:var(--accent)}
 details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-content}select{max-width:100%;font:inherit;color:inherit;background:var(--bg);padding:6px}
 .grid{grid-template-columns:repeat(2,minmax(0,1fr))}.grid section{min-width:0}:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.grid.reading{grid-template-columns:minmax(0,1fr)}
 @media(max-width:680px){.grid{grid-template-columns:minmax(0,1fr)}}
 </style>
-<script type="module" src="./web/app.js?v=0.2.0"></script>
+<script type="module" src="./web/app.js?v=0.3.0"></script>
 </head><body><main>
-<header><small>My Day · 0.2.0</small><h1>Мой день</h1><p>Чтение и быстрая запись в тестовую заметку Google Drive.</p><a href="./prototype/">Открыть макет</a></header>
+<header><small>My Day · 0.3.0</small><h1>Мой день</h1><p>Заметки и быстрый ввод мыслей в Google Drive.</p><a href="./prototype/">Открыть макет</a></header>
 <div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div>
 <section><h2>Подключение</h2>
   <label class="check"><input id="remember" type="checkbox" autocomplete="off" aria-describedby="device-hint"> Запомнить на личном устройстве</label>
@@ -22,14 +23,15 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
   </details>
   <div class="actions"><button id="connect" disabled>Подключить Google Drive</button><button id="disconnect" class="secondary" disabled>Отключиться</button><button id="forget" class="secondary" disabled>Забыть это устройство</button></div>
 </section>
-<section><h2>Тестовая заметка</h2>
-  <p id="first-pick">Выбери уже загруженный My-Day-test.md. Для первой пробы можно <a href="./web/My-Day-test.md" download="My-Day-test.md">скачать шаблон</a> и загрузить его на Drive обычным файлом.</p>
-  <div id="known-files" hidden><label for="known">Ранее выбранные тестовые файлы</label><select id="known"></select></div>
+<section><h2>Мои заметки</h2>
+  <p>Выбери «Мысли.md» для быстрой записи, «Now.md» или «To Do now.md» для чтения.</p>
+  <p id="first-pick">Для пробы подойдёт My-Day-test.md. Можно <a href="./web/My-Day-test.md" download="My-Day-test.md">скачать шаблон</a> и загрузить его в Drive.</p>
+  <div id="known-files" hidden><label for="known">Открыть выбранную ранее заметку</label><select id="known"></select></div>
   <div class="actions"><button id="pick" disabled>Выбрать файл</button><button id="refresh" class="secondary" disabled>Обновить</button></div>
   <p id="picker-error" class="meta" role="status" hidden></p><p id="file" class="meta muted">Файл ещё не выбран.</p><a id="drive-link" hidden target="_blank" rel="noopener noreferrer">Открыть файл в Drive</a>
 </section>
-<div class="grid">
-  <section><h2>Добавить мысль</h2><label for="thought">Тестовый текст</label><textarea id="thought" autocomplete="off" maxlength="3000" placeholder="Проверка My Day" disabled></textarea><div class="actions"><button id="save" disabled>Добавить в Drive</button><button id="discard" class="secondary" disabled>Очистить черновик</button></div><p id="draft" class="muted meta">Черновика нет.</p></section>
-  <section><h2>Содержимое файла</h2><p id="fresh" class="muted meta">Файл ещё не прочитан.</p><pre id="preview">Здесь появится текст из Drive.</pre></section>
+<div id="notes" class="grid">
+  <section id="capture"><h2>Добавить мысль</h2><label id="target" for="thought">Текст мысли</label><textarea id="thought" autocomplete="off" maxlength="3000" disabled></textarea><div class="actions"><button id="save" disabled>Добавить в Drive</button><button id="discard" class="secondary" disabled>Очистить черновик</button></div><p id="draft" class="muted meta">Черновика нет.</p></section>
+  <section><h2 id="preview-title">Содержимое файла</h2><p id="fresh" class="muted meta">Файл ещё не прочитан.</p><pre id="preview">Здесь появится текст из Drive.</pre></section>
 </div>
 </main></body></html>

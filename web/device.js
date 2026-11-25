@@ -1,3 +1,5 @@
+import {supportedNote, TEST_FILE} from './core.js?v=0.3.0';
+
 export const DEVICE_KEY = 'my-day-device-v1';
 export const LEGACY_DRAFT = 'my-day-test-draft-v1';
 export const DEFAULT_PROJECT = '327713401108';
@@ -7,7 +9,7 @@ export const validProject = value => typeof value === 'string' && /^\d{1,20}$/.t
 export const validId = value => typeof value === 'string' && /^[\w-]{1,256}$/.test(value);
 
 export function newDevice() {
-  return {version: 1, pickerKey: '', project: DEFAULT_PROJECT, fileIds: [], activeId: null, draft: null};
+  return {version: 1, pickerKey: '', project: DEFAULT_PROJECT, fileIds: [], noteNames: Object.create(null), activeId: null, draft: null};
 }
 
 export function readDraft(value, legacy = false) {
@@ -28,6 +30,11 @@ export function readDevice(raw) {
   device.draft = readDraft(saved.draft);
   if (saved.draft != null && !device.draft) throw new Error('Не удалось прочитать сохранённый черновик.');
   if (device.draft && !device.fileIds.includes(device.draft.fileId)) device.fileIds.push(device.draft.fileId);
+  // In 0.2 every remembered ID belonged to the test template.
+  for (const id of device.fileIds) {
+    const name = saved.noteNames?.[id];
+    device.noteNames[id] = supportedNote(name) ? name : TEST_FILE;
+  }
   device.activeId = device.draft?.fileId ?? (device.fileIds.includes(saved.activeId) ? saved.activeId : device.fileIds[0] ?? null);
   return device;
 }

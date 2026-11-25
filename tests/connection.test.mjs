@@ -3,6 +3,7 @@ import {after, before, test} from 'node:test';
 import {chromium} from 'playwright-core';
 import {fixture, firstFile, notice, original, saved, site} from './browser.mjs';
 import {recordBlock} from '../web/core.js';
+import {saveDraft} from '../web/drive.js';
 
 let browser;
 before(async () => { browser = await chromium.launch(); });
@@ -16,7 +17,7 @@ test('personal device restores a not-yet-sent draft and reads the external chang
   const stored = await saved(page);
   assert.equal(stored.draft.op, null);
   assert.deepEqual(stored.fileIds, ['fixture-a']);
-  assert.deepEqual(Object.keys(stored).sort(), ['activeId', 'draft', 'fileIds', 'pickerKey', 'project', 'version']);
+  assert.deepEqual(Object.keys(stored).sort(), ['activeId', 'draft', 'fileIds', 'noteNames', 'pickerKey', 'project', 'version']);
   assert(!JSON.stringify(stored).includes('synthetic-browser-token'));
   assert(!JSON.stringify(stored).includes('Исходная строка'));
   await page.close();
@@ -61,9 +62,6 @@ test('offline and lost PATCH response keep the same operation across reload and 
   remote.version++;
   await page.reload();
   await page.locator('#connect').click();
-  await notice(page, 'актуальное содержимое');
-  assert.equal(state.patches, 1);
-  await page.locator('#save').click();
   await notice(page, 'без дубля');
   assert.equal(remote.text.split(recordBlock(pending)).length - 1, 1);
   assert(remote.text.endsWith('Изменение после доставки\r\n'));
@@ -195,9 +193,8 @@ test('legacy draft explicitly moves to the tab with its original marker, even if
   assert.equal(await page.locator('#thought').inputValue(), d.text);
   assert.equal(await page.evaluate(() => localStorage.length), 0);
   await page.locator('#connect').click();
-  await notice(page, 'актуальное содержимое');
-  await page.locator('#save').click();
   await notice(page, 'без дубля');
+  assert.equal(await page.locator('#thought').inputValue(), '');
   assert.equal(state.patches, 0);
 });
 
@@ -272,7 +269,7 @@ test('changed text under an existing operation marker is not silently appended o
   assert.equal(state.patches, 1);
 });
 
-test('only a Picker key is remembered and only a validated test Markdown can become a write target', async t => {
+test('rejects secrets, unknown filenames and a test file without the template heading', async t => {
   const {open, state} = await fixture(browser, t);
   const page = await open();
   await page.locator('#remember').check();
@@ -291,4 +288,118 @@ test('only a Picker key is remembered and only a validated test Markdown can bec
   await notice(page, 'первой проверки');
   assert.deepEqual((await saved(page)).fileIds, ['fixture-a']);
   assert.equal(state.patches, 0);
+});
+
+test('a returning 0.2 personal profile recovers its 0.1 draft and original file with one connect click', async t => {
+  const {open, state} = await fixture(browser, t);
+  const page = await open();
+  const old = {fileId: 'fixture-b', op: 'decafbad-aaaa-4bbb-8ccc-0123456789ab', text: 'Недоставленный черновик'};
+  await page.evaluate(draft => {
+    localStorage.setItem('my-day-device-v1', JSON.stringify({version: 1, fileIds: [], draft: null}));
+    localStorage.setItem('my-day-test-draft-v1', JSON.stringify(draft));
+  }, old);
+  await page.reload();
+  assert.equal(await page.locator('#remember').isChecked(), true);
+  assert.equal(await page.locator('#thought').inputValue(), old.text);
+  assert.equal(await page.locator('#recover').isHidden(), true);
+  await page.getByRole('button', {name: 'Подключиться снова'}).click();
+  await notice(page, 'Для отправки');
+  assert.equal(state.patches, 0);
+  assert.equal(await page.evaluate(() => pickTest.opens), 0);
+  assert.deepEqual((await saved(page)).draft, old);
+  await page.locator('#save').click();
+  await notice(page, 'подтверждено');
+  assert.equal(state.patches, 1);
+  assert.equal(state.files.get(old.fileId).text, original + '\n' + recordBlock(old));
+});
+
+test('legacy migration waits for consent, preserves a newer draft, and keeps its source on storage failure', async t => {
+  const {open, state} = await fixture(browser, t);
+  const page = await open();
+  const old = {fileId: 'fixture-b', op: 'decafbad-aaaa-4bbb-8ccc-0123456789ab', text: 'Из прежней версии'};
+  await page.evaluate(draft => localStorage.setItem('my-day-test-draft-v1', JSON.stringify(draft)), old);
+  await page.reload();
+  await firstFile(page);
+  await page.locator('#thought').fill('Новый текст');
+  await page.locator('#remember').check();
+  assert.equal((await saved(page)).draft.text, 'Новый текст');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('my-day-test-draft-v1')).text), old.text);
+  await page.evaluate(() => localStorage.removeItem('my-day-device-v1'));
+  await page.reload();
+  await page.evaluate(() => {
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (key === 'my-day-device-v1' && JSON.parse(value).draft) throw new Error('quota');
+      return set.call(this, key, value);
+    };
+  });
+  await page.locator('#remember').check();
+  await page.locator('#storage-warning').filter({hasText: 'не сохранил'}).waitFor();
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('my-day-test-draft-v1')).op), old.op);
+  assert.equal(await page.locator('#thought').inputValue(), old.text);
+  assert.equal(state.patches, 0);
+});
+
+test('selected Inbox appends to its own ID; Now and To Do open read-only and restore by ID after login', async t => {
+  const {open, state} = await fixture(browser, t);
+  const source = '\uFEFF# Входящие\r\n\r\nСохранить исходную строку.\r\n';
+  state.files.set('inbox', {name: 'Мысли.md', text: source, version: 1});
+  state.files.set('context', {name: 'Now.md', text: '# Контекст\nТестовый приоритет\n', version: 1, canEdit: false});
+  state.files.set('tasks', {name: 'To Do now.md', text: '- [ ] Тестовая задача\n', version: 1});
+  const page = await open();
+  await firstFile(page, true);
+  for (const id of ['inbox', 'context', 'tasks']) {
+    await page.evaluate(id => { pickTest.id = id; }, id);
+    await page.locator('#pick').click();
+    await notice(page, state.files.get(id).name + ' — файл прочитан');
+    assert.equal(await page.locator('#preview').textContent(), state.files.get(id).text);
+    if (id === 'inbox') {
+      assert.match(await page.locator('#target').textContent(), /Мысли\.md/);
+      await page.locator('#thought').fill('Новая входящая мысль');
+      await page.locator('#save').click();
+      await notice(page, 'подтверждено');
+      assert(state.files.get('inbox').text.startsWith(source));
+      assert.equal(state.files.get('inbox').text.split('Новая входящая мысль').length - 1, 1);
+    } else {
+      assert.equal(await page.locator('#capture').isHidden(), true);
+      assert.equal(await page.locator('#save').isDisabled(), true);
+      assert.match(await page.locator('#preview-title').textContent(), /только чтение/);
+    }
+  }
+  assert.equal(state.files.get('fixture-a').text, original);
+  assert(!JSON.stringify(await saved(page)).includes('Тестовая задача'));
+  const tasks = state.files.get('tasks');
+  tasks.text += 'Внешнее дополнение\n';
+  tasks.version++;
+  await page.reload();
+  await page.locator('#connect').click();
+  await notice(page, 'актуальное содержимое To Do now.md');
+  assert.equal(await page.locator('#preview').textContent(), tasks.text);
+  await page.locator('#known').selectOption('inbox');
+  await notice(page, 'актуальное содержимое Мысли.md');
+  assert.equal(await page.locator('#capture').isVisible(), true);
+  assert.equal(state.patches, 1);
+});
+
+test('a renamed test file cannot redirect an outstanding draft even to a supported Inbox', async t => {
+  const {open, state} = await fixture(browser, t);
+  const page = await open();
+  await firstFile(page, true);
+  await page.locator('#thought').fill('Только в исходную тестовую заметку');
+  state.files.get('fixture-a').name = 'Мысли.md';
+  await page.locator('#save').click();
+  await notice(page, 'Имя выбранного файла изменилось');
+  assert.equal(state.patches, 0);
+  assert.equal((await saved(page)).draft.fileId, 'fixture-a');
+  assert.equal(state.files.get('fixture-a').text, original);
+  state.files.get('fixture-a').name = 'My-Day-test.md';
+  await page.locator('#save').click();
+  await notice(page, 'подтверждено');
+  assert.equal(state.patches, 1);
+});
+
+test('the Drive writer rejects both reading-only names before making any request', async () => {
+  for (const name of ['Now.md', 'To Do now.md']) {
+    await assert.rejects(saveDraft({fileId: 'tasks'}, () => assert.fail('Unexpected Drive request'), name), /только для чтения/);
+  }
 });

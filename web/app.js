@@ -1,5 +1,6 @@
-import {DEVICE_KEY, LEGACY_DRAFT, newDevice, readDevice, readDraft, validId, validPickerKey, validProject} from './device.js';
-import {driveError, saveDraft, snapshot} from './drive.js';
+import {recordBlock, TEST_FILE, writableNote} from './core.js?v=0.3.0';
+import {DEVICE_KEY, LEGACY_DRAFT, newDevice, readDevice, readDraft, validId, validPickerKey, validProject} from './device.js?v=0.3.0';
+import {driveError, saveDraft, snapshot} from './drive.js?v=0.3.0';
 
 const CLIENT = '327713401108-rdi4uv2duskfvn8d368i2ui56uhqsulo.apps.googleusercontent.com';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -65,41 +66,49 @@ function syncFields() {
 function listFiles() {
   const select = $('known');
   select.replaceChildren();
-  for (const id of device.fileIds) select.add(new Option('My-Day-test.md · ' + id, id));
+  for (const id of device.fileIds) select.add(new Option(device.noteNames[id] + ' · ' + id, id));
   select.value = device.activeId ?? '';
+  const name = device.noteNames[device.activeId];
+  const readOnly = Boolean(name && !writableNote(name));
   $('first-pick').hidden = Boolean(device.activeId);
   $('known-files').hidden = device.fileIds.length < 2;
-  $('file').textContent = device.activeId ? 'My-Day-test.md · ID ' + device.activeId : 'Файл ещё не выбран.';
+  $('file').textContent = device.activeId ? name + ' · ID ' + device.activeId : 'Файл ещё не выбран.';
+  $('capture').hidden = readOnly;
+  $('notes').classList.toggle('reading', readOnly);
+  $('preview-title').textContent = name ? name + (readOnly ? ' · только чтение' : '') : 'Содержимое файла';
+  $('target').textContent = name ? 'Запись в ' + name : 'Текст мысли';
 }
-function selectId(id) {
+function selectId(id, name) {
   if (device.activeId !== id) clearPreview();
   if (!device.fileIds.includes(id)) device.fileIds.push(id);
+  device.noteNames[id] = name;
   device.activeId = id;
   listFiles();
-  persist();
+  return persist();
 }
 function controls() {
   const locked = busy || awaitingLogin || Boolean(pickerWindow);
   const connected = Boolean(session && Date.now() < session.until);
   const draft = device.draft;
+  const canWrite = writableNote(device.noteNames[device.activeId]);
   $('remember').disabled = locked;
   $('key').disabled = $('project').disabled = locked;
   $('connect').disabled = locked || !client || connected;
-  $('connect').textContent = connected ? 'Google Drive подключён' :
+  $('connect').textContent = awaitingLogin ? 'Ожидаем вход в Google…' : connected ? 'Google Drive подключён' :
     (hasConnected || device.activeId ? 'Подключиться снова' : 'Подключить Google Drive');
   $('disconnect').disabled = locked || !session;
   $('forget').disabled = locked;
   $('pick').disabled = locked || !connected || !pickerReady;
   $('known').disabled = locked || Boolean(draft) || !connected;
   $('refresh').disabled = locked || !connected || !device.activeId;
-  $('thought').disabled = locked || !device.activeId || Boolean(draft?.op);
-  $('save').disabled = locked || !connected || !draft?.text.trim() || draft.fileId !== device.activeId || !readAt;
+  $('thought').disabled = locked || !canWrite || Boolean(draft?.op);
+  $('save').disabled = locked || !connected || !canWrite || !draft?.text.trim() || draft.fileId !== device.activeId || !readAt;
   $('save').textContent = draft?.op ? 'Проверить и повторить' : 'Добавить в Drive';
   $('discard').disabled = locked || !draft;
   $('legacy').hidden = !legacy;
   $('recover').disabled = locked || Boolean(draft);
   $('device-hint').textContent = personal ?
-    'В этом браузере сохраняются ограниченный ключ Picker, номер проекта, ID тестовых файлов и текст черновика. Токен Google живёт только во вкладке.' :
+    'В этом браузере сохраняются ограниченный ключ Picker, номер проекта, выбранные файлы и черновик. Токен Google живёт только во вкладке.' :
     'На общем компьютере оставь флажок снятым. Ключ, выбор файлов и черновик будут жить только в этой вкладке.';
   const where = personal && !storageFault ? 'Черновик сохранён на устройстве.' : 'Черновик в этой вкладке. Оставь её открытой.';
   $('draft').textContent = !draft ? 'Черновика нет.' : where + (draft.op ?
@@ -141,6 +150,29 @@ function show(result) {
   $('drive-link').href = 'https://drive.google.com/open?id=' + encodeURIComponent(result.meta.id);
   $('drive-link').hidden = false;
 }
+function finishDraft(message) {
+  const draft = device.draft;
+  device.draft = null;
+  if (!persist()) {
+    device.draft = draft;
+    status('Drive подтвердил запись. Не удалось очистить местный черновик.', true);
+    return;
+  }
+  $('thought').value = '';
+  status(message);
+}
+function showRead(result, message) {
+  show(result);
+  const draft = device.draft;
+  if (draft?.op && draft.fileId === result.meta.id) {
+    if (result.content.includes(recordBlock(draft))) {
+      finishDraft('Запись уже есть в ' + result.meta.name + '. Доставка подтверждена без дубля.');
+      return;
+    }
+    message += ' Черновик сохранён. Для отправки нажми «Проверить и повторить».';
+  }
+  status(message);
+}
 function fail(error) {
   if (error.access === 'expired' || error.access === 'consent') {
     endSession();
@@ -165,9 +197,10 @@ async function run(action) {
   finally { busy = false; controls(); }
 }
 async function readActive() {
-  status('Читаем тестовый файл из Drive…');
-  show(await snapshot(device.activeId, request));
-  status('Получено актуальное содержимое из Google Drive.');
+  const id = device.activeId;
+  status('Читаем ' + device.noteNames[id] + ' из Drive…');
+  const result = await snapshot(id, request, device.noteNames[id]);
+  if (session && device.activeId === id) showRead(result, 'Получено актуальное содержимое ' + result.meta.name + '.');
 }
 function connected(response) {
   if (!awaitingLogin) return;
@@ -188,7 +221,14 @@ function connected(response) {
   expiryTimer = setTimeout(expire, usable);
   controls();
   if (device.activeId) run(readActive);
-  else status('Google Drive подключён. Выбери тестовый файл.');
+  else if (validPickerKey($('key').value.trim())) {
+    status('Google Drive подключён. Нажми «Выбрать файл», чтобы открыть заметку.');
+    if (pickerReady) $('pick').focus();
+  } else {
+    $('setup').open = true;
+    status('Google Drive подключён. Введи ограниченный ключ Picker и нажми «Выбрать файл».');
+    $('key').focus();
+  }
 }
 function loadScript(src, ready, failed) {
   const script = document.createElement('script');
@@ -199,13 +239,15 @@ function loadScript(src, ready, failed) {
 }
 function initAuth() {
   client = google.accounts.oauth2.initTokenClient({client_id: CLIENT, scope: SCOPE, include_granted_scopes: false,
-    callback: connected, error_callback: () => {
+    callback: connected, error_callback: error => {
       if (!awaitingLogin) return;
       awaitingLogin = false;
-      status('Окно входа не открылось или было закрыто. Разреши всплывающее окно Google и нажми кнопку подключения.', true);
+      status(error?.type === 'popup_closed' ? 'Окно входа закрыто. Нажми кнопку подключения ещё раз.' :
+        'Окно входа не открылось. Разреши всплывающее окно для My Day и нажми кнопку подключения.', true);
       controls();
     }});
-  status(device.activeId ? 'Выбор файла восстановлен. Подключись, чтобы прочитать его из Drive.' : 'Подключи Google Drive и выбери тестовый файл.');
+  status(device.activeId ? 'Нажми «Подключиться снова», чтобы открыть ' + device.noteNames[device.activeId] + '.' :
+    'Нажми «Подключить Google Drive», затем выбери файл.');
   controls();
 }
 function pickerFailed() {
@@ -216,6 +258,7 @@ $('connect').onclick = () => {
   if (session && Date.now() >= session.until) expire();
   if (!client || busy || awaitingLogin || pickerWindow || session) return;
   awaitingLogin = true;
+  status('Заверши вход в окне Google. После входа My Day откроет выбранную заметку.');
   controls();
   const prompt = promptNext ?? (personal && device.activeId ? '' : 'select_account');
   promptNext = null;
@@ -243,6 +286,7 @@ $('remember').onchange = () => {
   if ($('remember').checked) {
     personal = true;
     if (!persist()) personal = false;
+    else if (canRestoreLegacy()) recoverLegacy();
   } else {
     try {
       localStorage.removeItem(DEVICE_KEY);
@@ -270,19 +314,27 @@ $('forget').onclick = () => {
   }
   controls();
 };
-$('recover').onclick = () => {
+function canRestoreLegacy() {
+  return legacy && !device.draft && (!device.activeId || device.activeId === legacy.fileId)
+    && (!device.noteNames[legacy.fileId] || device.noteNames[legacy.fileId] === TEST_FILE);
+}
+function recoverLegacy() {
   if (!legacy || device.draft) return;
+  if (device.noteNames[legacy.fileId] && device.noteNames[legacy.fileId] !== TEST_FILE) {
+    status('Для старого черновика нужен исходный My-Day-test.md.', true);
+    return;
+  }
   device.draft = legacy;
-  selectId(legacy.fileId);
   $('thought').value = legacy.text;
-  if (!personal || !storageFault) {
+  if (selectId(legacy.fileId, TEST_FILE)) {
     try { localStorage.removeItem(LEGACY_DRAFT); legacy = null; }
     catch { storageWarning('Браузер не дал удалить старую копию черновика.'); }
   }
-  status('Черновик версии 0.1.1 восстановлен с прежней меткой отправки.');
+  status(session ? 'Проверяем прежний черновик в Drive…' : 'Черновик восстановлен. Нажми «Подключиться снова».');
   controls();
   if (session) run(readActive);
-};
+}
+$('recover').onclick = recoverLegacy;
 for (const field of ['key', 'project']) $(field).oninput = () => {
   const value = $(field).value.trim();
   if (field === 'key') device.pickerKey = validPickerKey(value) ? value : '';
@@ -317,11 +369,10 @@ $('pick').onclick = () => {
           return;
         }
         run(async () => {
-          const result = await snapshot(id, request);
-          selectId(id);
-          show(result);
+          const result = await snapshot(id, request, device.noteNames[id]);
+          selectId(id, result.meta.name);
           $('setup').open = false;
-          status('Тестовый файл прочитан из Drive.');
+          showRead(result, result.meta.name + ' — файл прочитан из Drive.');
         });
       }).build();
     controls();
@@ -330,12 +381,13 @@ $('pick').onclick = () => {
 };
 $('known').onchange = () => {
   if (device.draft || !device.fileIds.includes($('known').value)) return;
-  selectId($('known').value);
+  const id = $('known').value;
+  selectId(id, device.noteNames[id]);
   run(readActive);
 };
 $('refresh').onclick = () => run(readActive);
 $('thought').oninput = () => {
-  if (!device.activeId || device.draft?.op) return;
+  if (!writableNote(device.noteNames[device.activeId]) || device.draft?.op) return;
   const text = $('thought').value;
   device.draft = text ? {fileId: device.activeId, text, op: null} : null;
   persist();
@@ -351,7 +403,8 @@ $('discard').onclick = () => {
 };
 $('save').onclick = () => run(async () => {
   let draft = device.draft;
-  if (!draft?.text.trim() || draft.fileId !== device.activeId || !readAt) return;
+  const name = device.noteNames[device.activeId];
+  if (!writableNote(name) || !draft?.text.trim() || draft.fileId !== device.activeId || !readAt) return;
   if (!draft.op) {
     device.draft = {...draft, op: crypto.randomUUID(), text: draft.text.trim()};
     if (!persist()) { device.draft = draft; return; }
@@ -360,12 +413,9 @@ $('save').onclick = () => run(async () => {
   } else if (!persist()) {
     return;
   }
-  const {verified, already} = await saveDraft(draft, request);
+  const {verified, already} = await saveDraft(draft, request, name);
   show(verified);
-  device.draft = null;
-  if (!persist()) { device.draft = draft; status('Drive подтвердил запись. Не удалось очистить местный черновик.', true); return; }
-  $('thought').value = '';
-  status(already ? 'Запись уже была в Drive. Повтор подтверждён без дубля.' : 'Записано в Google Drive и подтверждено повторным чтением.');
+  finishDraft(already ? 'Запись уже была в Drive. Повтор подтверждён без дубля.' : 'Записано в ' + name + ' и подтверждено повторным чтением.');
 });
 window.addEventListener('beforeunload', event => {
   if (device.draft && (!personal || storageFault)) { event.preventDefault(); event.returnValue = true; }
@@ -403,6 +453,7 @@ document.addEventListener('visibilitychange', () => { if (session && Date.now() 
 window.addEventListener('pageshow', event => { if (event.persisted) location.reload(); });
 
 restore();
+if (personal && canRestoreLegacy()) recoverLegacy();
 syncFields();
 listFiles();
 controls();

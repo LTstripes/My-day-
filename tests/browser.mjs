@@ -88,7 +88,7 @@ export async function fixture(browser, t) {
     }
     state.onMetadata?.(file);
     return route.fulfill({headers, json: {id, name: file.name, mimeType: 'text/markdown', size: String(Buffer.byteLength(file.text)),
-      version: String(file.version), capabilities: {canEdit: true}, trashed: false}});
+      version: String(file.version), capabilities: {canEdit: file.canEdit ?? true}, trashed: false}});
   });
   ctx.on('page', page => page.on('pageerror', error => state.errors.push(error.message)));
   t.after(async () => { await ctx.close(); assert.deepEqual(state.errors, []); });
