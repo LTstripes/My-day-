@@ -38,7 +38,7 @@ async function metadata(id, request) {
   return response.json();
 }
 
-function checkFile(meta, id, expectedName) {
+function checkFile(meta, id, expectedName, viewOnly = false) {
   if (meta.id !== id || meta.trashed || meta.mimeType?.startsWith('application/vnd.google-apps.') || !supportedNote(meta.name)) {
     throw new Error('Выбери Мысли.md, Now.md, To Do now.md или My-Day-test.md из тестового шаблона.');
   }
@@ -46,12 +46,12 @@ function checkFile(meta, id, expectedName) {
     throw new Error('Имя выбранного файла изменилось. Ожидался ' + expectedName + '. Проверь название в Drive.');
   }
   if (Number(meta.size) > MAX_BYTES) throw new Error('Заметка превышает лимит 500 КБ.');
-  if (writableNote(meta.name) && !meta.capabilities?.canEdit) throw new Error('Для записи в ' + meta.name + ' требуется право редактирования.');
+  if (!viewOnly && writableNote(meta.name) && !meta.capabilities?.canEdit) throw new Error('Для записи в ' + meta.name + ' требуется право редактирования.');
 }
 
-export async function snapshot(id, request, expectedName) {
+export async function snapshot(id, request, expectedName, {viewOnly = false} = {}) {
   const before = await metadata(id, request);
-  checkFile(before, id, expectedName);
+  checkFile(before, id, expectedName, viewOnly);
   const response = await request(FILES + encodeURIComponent(id) + '?alt=media');
   const bytes = await response.arrayBuffer();
   if (bytes.byteLength > MAX_BYTES) throw new Error('Заметка превышает лимит 500 КБ.');
@@ -59,7 +59,7 @@ export async function snapshot(id, request, expectedName) {
   try { content = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes); }
   catch { throw new Error('Заметка должна быть сохранена в UTF-8.'); }
   const after = await metadata(id, request);
-  checkFile(after, id, before.name);
+  checkFile(after, id, before.name, viewOnly);
   if (!before.version || before.version !== after.version) throw new Error('Не удалось подтвердить версию файла. Нажми «Обновить».');
   if (after.name === TEST_FILE && !/^\uFEFF?# My Day test\r?\n/.test(content)) {
     throw new Error('Для первой проверки нужен My-Day-test.md с заголовком из тестового шаблона.');
