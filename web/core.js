@@ -1,12 +1,14 @@
 export const TEST_FILE = 'My-Day-test.md';
 export const INBOX = 'Мысли.md';
+export const NOW = 'Now.md';
+export const TASKS = 'To Do now.md';
 
 export function writableNote(name) {
   return name === TEST_FILE || name === INBOX;
 }
 
 export function supportedNote(name) {
-  return writableNote(name) || name === 'Now.md' || name === 'To Do now.md';
+  return writableNote(name) || name === NOW || name === TASKS;
 }
 
 export function recordBlock(draft) {

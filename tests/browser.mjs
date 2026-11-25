@@ -5,7 +5,7 @@ export const site = 'https://my-day.test/My-day-/';
 export const original = '\uFEFF# My Day test\r\n\r\nИсходная строка.\r\n';
 const key = 'AIza' + 'p'.repeat(35);
 const bearer = 'synthetic-browser-token';
-const paths = new Map(['index.html', 'web/app.js', 'web/device.js', 'web/drive.js', 'web/core.js', 'prototype/index.html']
+const paths = new Map(['index.html', 'web/app.js', 'web/device.js', 'web/drive.js', 'web/core.js', 'web/day-view.js', 'web/today.js', 'prototype/index.html']
   .map(path => [path, new URL('../' + path, import.meta.url)]));
 
 // The real page calls the public GIS and Picker interfaces. Only these two scripts and the network are replaced.
@@ -28,6 +28,7 @@ function fakePicker() {
     setIncludeFolders() { return this; }
     setSelectFolderEnabled() { return this; }
     setMode() { return this; }
+    setQuery(query) { pickTest.query = query; return this; }
   }
   class Builder {
     addView() { return this; }
@@ -47,8 +48,8 @@ function fakePicker() {
     Action: {CANCEL: 'cancel', PICKED: 'picked'}, Response: {ACTION: 'action', DOCUMENTS: 'docs'}, Document: {ID: 'id'}};
   window.gapi = {load: (_name, options) => options.callback()};
 }
-export async function fixture(browser, t) {
-  const ctx = await browser.newContext({locale: 'ru-RU'});
+export async function fixture(browser, t, contextOptions = {}) {
+  const ctx = await browser.newContext({locale: 'ru-RU', ...contextOptions});
   const state = {calls: [], mediaReads: [], patches: 0, files: new Map(), errors: []};
   for (const id of ['fixture-a', 'fixture-b']) state.files.set(id, {text: original, name: 'My-Day-test.md', version: 1});
   await ctx.route('**/*', async route => {
@@ -71,9 +72,10 @@ export async function fixture(browser, t) {
     const headers = {'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'PATCH, GET, OPTIONS'};
     if (req.method() === 'OPTIONS') return route.fulfill({status: 204, headers});
     assert.equal(req.headers().authorization, 'Bearer ' + bearer);
-    if (state.offline) return route.abort();
-    if (state.refusal) return route.fulfill({status: state.refusal.status, headers, json: {error: {errors: [{reason: state.refusal.reason}]}}});
     const id = url.pathname.split('/').at(-1), file = state.files.get(id);
+    if (state.offline || file?.offline) return route.abort();
+    const refusal = state.refusal ?? file?.refusal;
+    if (refusal) return route.fulfill({status: refusal.status, headers, json: {error: {errors: [{reason: refusal.reason}]}}});
     if (!file) return route.fulfill({status: 404, headers, json: {error: {}}});
     if (req.method() === 'PATCH') {
       state.patches++;
