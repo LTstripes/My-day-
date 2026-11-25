@@ -34,6 +34,8 @@
 
 ## Материалы проекта
 
+- [Текущий релиз, результаты проверок и следующий шаг](docs/STATUS.md).
+- [Папки My Day на Windows, рабочие копии агентов и карантин](docs/WORKSPACE.md).
 - [Концепция, сценарии и решения](docs/PRODUCT.md).
 - [Этапы и задачи](docs/ROADMAP.md).
 - [Первый шаг настройки Google](docs/GETTING_STARTED.md).
