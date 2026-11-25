@@ -30,11 +30,27 @@ function restore(){
     if(saved&&typeof saved.text==='string'&&typeof saved.fileId==='string'&&typeof saved.op==='string'&&saved.text.length<=3000&&/^[0-9a-f-]{36}$/.test(saved.op)){pending=saved;$('thought').value=saved.text}
   }catch{status('Локальное хранилище недоступно. Для записи потребуется разрешить его.',true)}
 }
+function describeDriveError(status,body,operation){
+  const err=body?.error;
+  const reasons=[...(Array.isArray(err?.errors)?err.errors.map(x=>x?.reason):[]),...(Array.isArray(err?.details)?err.details.map(x=>x?.reason):[]),err?.status].filter(x=>typeof x==="string"&&/^[A-Za-z0-9_-]{1,100}$/.test(x));
+  const codes=[...new Set(reasons)];
+  let advice="Пришли этот код ошибки. Настройки и ключи пока не меняй.";
+  if(codes.some(x=>["SERVICE_DISABLED","accessNotConfigured","apiDisabled"].includes(x)))advice="Проверь, что Google Drive API (drive.googleapis.com) включён в том же Cloud project, что и OAuth Client ID.";
+  else if(codes.includes("appNotAuthorizedToFile"))advice="Google не выдал приложению доступ к выбранному файлу. Проверим Picker и номер проекта.";
+  else if(codes.some(x=>["ACCESS_TOKEN_SCOPE_INSUFFICIENT","insufficientPermissions"].includes(x)))advice="Google не подтвердил нужный scope. Проверим согласие drive.file.";
+  else if(codes.includes("insufficientFilePermissions"))advice="Google не подтвердил право редактирования файла.";
+  else if(codes.includes("fileNotDownloadable"))advice="Google не позволяет скачать содержимое как обычный файл.";
+  return "Google Drive: HTTP "+status+" · "+operation+"\n"+(codes.length?"Причина Google: "+codes.join(", ")+"\n":"Google не вернул код причины.\n")+advice;
+}
 async function request(url,options={}){
   if(!hasToken()){token=null;throw new Error('Доступ Google истёк. Нажми «Подключить Google Drive» ещё раз.')}
   const response=await fetch(url,{...options,cache:'no-store',headers:{...options.headers,Authorization:'Bearer '+token}});
   if(response.status===401){token=null;throw new Error('Google отклонил токен. Подключись повторно.')}
-  if(!response.ok)throw new Error('Google Drive: HTTP '+response.status+'. Проверь разрешения и выбранный файл.');
+  if(!response.ok){
+    const operation=options.method==='PATCH'?'запись файла':url.includes('alt=media')?'чтение содержимого':'чтение метаданных';
+    const errorBody=await response.json().catch(()=>null);
+    throw new Error(describeDriveError(response.status,errorBody,operation));
+  }
   return response;
 }
 async function metadata(id){

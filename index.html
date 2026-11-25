@@ -5,9 +5,9 @@
 </style>
 <script src="https://accounts.google.com/gsi/client" defer></script>
 <script src="https://apis.google.com/js/api.js" defer></script>
-<script type="module" src="./web/app.js"></script>
+<script type="module" src="./web/app.js?v=0.1.1"></script>
 </head><body><main>
-<header><small>MY DAY · техническая проба 0.1</small><h1>Мой день</h1><p>Первое настоящее подключение к Google Drive. Пока только тестовый файл.</p><a href="./prototype/">Открыть концептуальный макет</a></header>
+<header><small>MY DAY · техническая проба 0.1.1</small><h1>Мой день</h1><p>Первое настоящее подключение к Google Drive. Пока только тестовый файл.</p><a href="./prototype/">Открыть концептуальный макет</a></header>
 <div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div>
 <section><h2>1. Подключение</h2><p class="muted">Ключ Picker вводится здесь и остаётся в памяти страницы. Не вводи Client Secret или ключи моделей.</p><label for="key">Ограниченный API key My Day Picker</label><input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…"><label for="project">Номер Google Cloud project (проверь при необходимости)</label><input id="project" inputmode="numeric" value="327713401108"><div class="actions"><button id="connect" disabled>Подключить Google Drive</button><button id="disconnect" class="secondary" disabled>Отключиться</button></div></section>
 <section><h2>2. Тестовая заметка</h2><p>Скачай <a href="./web/My-Day-test.md" download="My-Day-test.md">My-Day-test.md</a>, загрузи его в личный Google Drive через обычную загрузку файла (не преобразовывай в Google Docs). Затем выбери его здесь.</p><div class="actions"><button id="pick" disabled>Выбрать файл</button><button id="refresh" class="secondary" disabled>Обновить</button></div><p id="file" class="meta muted">Файл не выбран</p><a id="drive-link" hidden target="_blank" rel="noopener noreferrer">Открыть файл в Drive</a></section>
