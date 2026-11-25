@@ -1,4 +1,4 @@
-import {supportedNote, TEST_FILE} from './core.js?v=0.3.0';
+import {INBOX, NOW, supportedNote, TASKS, TEST_FILE} from './core.js?v=0.4.0';
 
 export const DEVICE_KEY = 'my-day-device-v1';
 export const LEGACY_DRAFT = 'my-day-test-draft-v1';
@@ -9,7 +9,14 @@ export const validProject = value => typeof value === 'string' && /^\d{1,20}$/.t
 export const validId = value => typeof value === 'string' && /^[\w-]{1,256}$/.test(value);
 
 export function newDevice() {
-  return {version: 1, pickerKey: '', project: DEFAULT_PROJECT, fileIds: [], noteNames: Object.create(null), activeId: null, draft: null};
+  return {version: 1, pickerKey: '', project: DEFAULT_PROJECT, fileIds: [], noteNames: Object.create(null),
+    preferredIds: {}, activeId: null, draft: null};
+}
+
+export function preferredFile(device, name) {
+  if (device.preferredIds[name]) return device.preferredIds[name];
+  const matches = device.fileIds.filter(id => device.noteNames[id] === name);
+  return matches.length === 1 ? matches[0] : null;
 }
 
 export function readDraft(value, legacy = false) {
@@ -34,6 +41,10 @@ export function readDevice(raw) {
   for (const id of device.fileIds) {
     const name = saved.noteNames?.[id];
     device.noteNames[id] = supportedNote(name) ? name : TEST_FILE;
+  }
+  for (const name of [NOW, TASKS, INBOX]) {
+    const id = saved.preferredIds?.[name];
+    if (validId(id) && device.noteNames[id] === name) device.preferredIds[name] = id;
   }
   device.activeId = device.draft?.fileId ?? (device.fileIds.includes(saved.activeId) ? saved.activeId : device.fileIds[0] ?? null);
   return device;

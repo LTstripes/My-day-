@@ -7,12 +7,39 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
 .grid{grid-template-columns:repeat(2,minmax(0,1fr))}.grid section{min-width:0}:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .grid.reading{grid-template-columns:minmax(0,1fr)}
 @media(max-width:680px){.grid{grid-template-columns:minmax(0,1fr)}}
+.masthead,.connection-bar,.day-head,.source-head,.source-foot{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.masthead{padding-bottom:1rem;border-bottom:1px solid var(--line);margin-bottom:1rem}.masthead h1{margin:0}.masthead nav{display:flex;flex-wrap:wrap;gap:1.1rem}
+.connection-bar{margin-bottom:1rem}.connection-bar .status{margin:0;flex:1 1 280px}.connection-bar button{flex:none}
+#today{padding:clamp(16px,3vw,30px);margin-bottom:22px}.day-head{align-items:flex-start}.day-head h2{font-size:clamp(1.8rem,4vw,2.6rem);letter-spacing:-.045em;line-height:1.15;margin:0}
+.day-head p{margin:6px 0 0}.day-head .actions{margin:0}.day-grid{margin-top:22px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.day-card{min-width:0;display:flex;flex-direction:column;border-top:2px solid var(--line);padding-top:14px}.day-card:first-child{border-color:var(--accent)}
+.source-head{align-items:baseline;gap:4px 12px}.source-head h3{margin:0;font-size:1.15rem}.source-head small{white-space:nowrap}
+.day-body{white-space:pre-wrap;overflow-wrap:anywhere;max-height:20rem;overflow:auto;margin-top:10px}.day-body ul{margin:0;padding-left:1.25rem}.day-body li{padding:3px 0}
+.source-foot{margin-top:auto;padding-top:10px;gap:6px 14px;justify-content:flex-start}.source-foot button{padding:0;background:transparent;color:var(--accent);text-decoration:underline;min-height:36px;font-size:.9rem}.source-foot a{font-size:.9rem}
+.source-state{margin:10px 0 0}.source-state.error{color:#963e2b}@media(prefers-color-scheme:dark){.source-state.error{color:#ffb39d}}
+@media(max-width:680px){.day-grid{grid-template-columns:minmax(0,1fr);gap:16px}.masthead,.day-head{gap:12px}.day-head .actions{width:100%}.connection-bar{gap:8px}.connection-bar .status{flex-basis:100%}}
+@media(max-width:420px){.day-head .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.day-head button{padding:8px 5px}}
 </style>
-<script type="module" src="./web/app.js?v=0.3.0"></script>
+<script type="module" src="./web/app.js?v=0.4.0"></script>
 </head><body><main>
-<header><small>My Day · 0.3.0</small><h1>Мой день</h1><p>Заметки и быстрый ввод мыслей в Google Drive.</p><a href="./prototype/">Открыть макет</a></header>
-<div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div>
-<section><h2>Подключение</h2>
+<header class="masthead"><div><small>My Day · 0.4.0</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#library">Мои заметки</a><a href="#connection">Подключение</a><a href="./prototype/">Макет</a></nav></header>
+<div class="connection-bar"><div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div><button id="connect" disabled>Подключить Google Drive</button></div>
+<section id="today" aria-labelledby="today-title">
+  <div class="day-head"><div><h2 id="today-title">Сегодня</h2><p class="muted"><time id="today-date"></time> · <span id="today-zone"></span></p></div>
+    <div class="actions"><button id="today-capture" disabled>Записать мысль</button><button id="today-refresh" class="secondary" disabled>Обновить обзор</button></div>
+  </div>
+  <div class="day-grid">
+    <article id="today-context" class="day-card"><div class="source-head"><h3>Текущий фокус</h3><small>Now.md</small></div>
+      <div data-body class="day-body"></div><p data-state class="meta muted source-state" role="status"></p>
+      <div class="source-foot"><button type="button" data-day-pick="Now.md" disabled>Выбрать Now.md</button><a data-open hidden target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>
+    </article>
+    <article id="today-tasks" class="day-card"><div class="source-head"><h3>Дела на сегодня</h3><small>To Do now.md</small></div>
+      <div data-body class="day-body"></div><p data-state class="meta muted source-state" role="status"></p>
+      <div class="source-foot"><button type="button" data-day-pick="To Do now.md" disabled>Выбрать To Do now.md</button><a data-open hidden target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>
+    </article>
+  </div>
+</section>
+<section id="connection"><h2>Настройки подключения</h2>
   <label class="check"><input id="remember" type="checkbox" autocomplete="off" aria-describedby="device-hint"> Запомнить на личном устройстве</label>
   <p id="device-hint" class="muted meta">На общем компьютере оставь флажок снятым. Ключ, выбор файлов и черновик будут жить только в этой вкладке.</p>
   <p id="storage-warning" class="status error" role="alert" hidden></p>
@@ -21,9 +48,9 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
     <label for="key">Ограниченный браузерный ключ My Day Picker</label><input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
     <label for="project">Номер проекта Google Cloud</label><input id="project" inputmode="numeric" autocomplete="off" value="327713401108">
   </details>
-  <div class="actions"><button id="connect" disabled>Подключить Google Drive</button><button id="disconnect" class="secondary" disabled>Отключиться</button><button id="forget" class="secondary" disabled>Забыть это устройство</button></div>
+  <div class="actions"><button id="disconnect" class="secondary" disabled>Отключиться</button><button id="forget" class="secondary" disabled>Забыть это устройство</button></div>
 </section>
-<section><h2>Мои заметки</h2>
+<section id="library"><h2>Мои заметки</h2>
   <p>Выбери «Мысли.md» для быстрой записи, «Now.md» или «To Do now.md» для чтения.</p>
   <p id="first-pick">Для пробы подойдёт My-Day-test.md. Можно <a href="./web/My-Day-test.md" download="My-Day-test.md">скачать шаблон</a> и загрузить его в Drive.</p>
   <div id="known-files" hidden><label for="known">Открыть выбранную ранее заметку</label><select id="known"></select></div>

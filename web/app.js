@@ -1,6 +1,7 @@
-import {recordBlock, TEST_FILE, writableNote} from './core.js?v=0.3.0';
-import {DEVICE_KEY, LEGACY_DRAFT, newDevice, readDevice, readDraft, validId, validPickerKey, validProject} from './device.js?v=0.3.0';
-import {driveError, saveDraft, snapshot} from './drive.js?v=0.3.0';
+import {INBOX, NOW, recordBlock, TASKS, TEST_FILE, writableNote} from './core.js?v=0.4.0';
+import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject} from './device.js?v=0.4.0';
+import {driveError, saveDraft, snapshot} from './drive.js?v=0.4.0';
+import {clearDay, dayFileFailed, showDayFile, syncDaySources, updateDayDate} from './day-view.js?v=0.4.0';
 
 const CLIENT = '327713401108-rdi4uv2duskfvn8d368i2ui56uhqsulo.apps.googleusercontent.com';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -64,6 +65,7 @@ function syncFields() {
   $('thought').value = device.draft?.text ?? '';
 }
 function listFiles() {
+  syncDaySources(device);
   const select = $('known');
   select.replaceChildren();
   for (const id of device.fileIds) select.add(new Option(device.noteNames[id] + ' · ' + id, id));
@@ -78,13 +80,19 @@ function listFiles() {
   $('preview-title').textContent = name ? name + (readOnly ? ' · только чтение' : '') : 'Содержимое файла';
   $('target').textContent = name ? 'Запись в ' + name : 'Текст мысли';
 }
-function selectId(id, name) {
-  if (device.activeId !== id) clearPreview();
+function rememberFile(id, name) {
   if (!device.fileIds.includes(id)) device.fileIds.push(id);
   device.noteNames[id] = name;
+}
+function selectId(id, name) {
+  if (device.activeId !== id) clearPreview();
+  rememberFile(id, name);
   device.activeId = id;
   listFiles();
   return persist();
+}
+function captureId() {
+  return device.noteNames[device.activeId] === INBOX ? device.activeId : preferredFile(device, INBOX);
 }
 function controls() {
   const locked = busy || awaitingLogin || Boolean(pickerWindow);
@@ -99,6 +107,10 @@ function controls() {
   $('disconnect').disabled = locked || !session;
   $('forget').disabled = locked;
   $('pick').disabled = locked || !connected || !pickerReady;
+  for (const button of document.querySelectorAll('[data-day-pick]')) button.disabled = $('pick').disabled;
+  $('today-refresh').disabled = locked || !connected || !(preferredFile(device, NOW) || preferredFile(device, TASKS));
+  $('today-capture').disabled = locked || (!draft && (!connected || (!captureId() && !pickerReady)));
+  $('today-capture').textContent = draft ? 'К черновику' : 'Записать мысль';
   $('known').disabled = locked || Boolean(draft) || !connected;
   $('refresh').disabled = locked || !connected || !device.activeId;
   $('thought').disabled = locked || !canWrite || Boolean(draft?.op);
@@ -121,6 +133,7 @@ function endSession() {
   session = null;
   clearTimeout(expiryTimer);
   clearPreview();
+  clearDay();
 }
 function expire() {
   endSession();
@@ -142,6 +155,12 @@ async function request(url, options = {}) {
     throw driveError(response.status, await response.json().catch(() => null), operation);
   }
   return response;
+}
+function sessionRequest(current) {
+  return (url, options) => {
+    if (session !== current) throw new DOMException('Подключение завершено.', 'AbortError');
+    return request(url, options);
+  };
 }
 function show(result) {
   $('preview').textContent = result.content;
@@ -173,6 +192,10 @@ function showRead(result, message) {
   }
   status(message);
 }
+function errorMessage(error) {
+  return error instanceof TypeError || error.name === 'TimeoutError' ?
+    'Не удалось связаться с Drive. Проверь интернет и повтори попытку.' : error.message || 'Не удалось выполнить операцию.';
+}
 function fail(error) {
   if (error.access === 'expired' || error.access === 'consent') {
     endSession();
@@ -183,9 +206,7 @@ function fail(error) {
   } else if (readAt) {
     $('fresh').textContent = 'Последнее чтение · ' + readAt + '. Данные могут быть устаревшими.';
   }
-  const message = error instanceof TypeError || error.name === 'TimeoutError' ?
-    'Не удалось связаться с Drive. Проверь интернет и повтори попытку.' : error.message;
-  status(message || 'Не удалось выполнить операцию.', true);
+  status(errorMessage(error), true);
 }
 async function run(action) {
   if (busy || awaitingLogin || pickerWindow) return;
@@ -196,11 +217,36 @@ async function run(action) {
   catch (error) { if (current === session) fail(error); }
   finally { busy = false; controls(); }
 }
-async function readActive() {
-  const id = device.activeId;
-  status('Читаем ' + device.noteNames[id] + ' из Drive…');
-  const result = await snapshot(id, request, device.noteNames[id]);
-  if (session && device.activeId === id) showRead(result, 'Получено актуальное содержимое ' + result.meta.name + '.');
+function applyReadError(id, error, report = false) {
+  if (error.access === 'expired' || error.access === 'consent') { fail(error); return; }
+  dayFileFailed(id, error, errorMessage(error));
+  if (device.activeId === id) fail(error);
+  else if (report) status(errorMessage(error), true);
+}
+async function refreshFiles(ids) {
+  const current = session;
+  const fetchInSession = sessionRequest(current);
+  await Promise.all([...new Set(ids.filter(Boolean))].map(async id => {
+    try {
+      const result = await snapshot(id, fetchInSession, device.noteNames[id]);
+      if (session !== current) return;
+      showDayFile(result);
+      if (device.activeId === id) showRead(result, 'Получено актуальное содержимое ' + result.meta.name + '.');
+    } catch (error) {
+      if (session === current) applyReadError(id, error);
+    }
+  }));
+}
+function dayIds() {
+  return [preferredFile(device, NOW), preferredFile(device, TASKS)];
+}
+function readActive() {
+  status('Читаем ' + device.noteNames[device.activeId] + ' из Drive…');
+  return refreshFiles([device.activeId]);
+}
+function readOnConnect() {
+  status('Читаем выбранные заметки из Drive…');
+  return refreshFiles([device.activeId, ...dayIds()]);
 }
 function connected(response) {
   if (!awaitingLogin) return;
@@ -220,7 +266,7 @@ function connected(response) {
   hasConnected = true;
   expiryTimer = setTimeout(expire, usable);
   controls();
-  if (device.activeId) run(readActive);
+  if (device.activeId) run(readOnConnect);
   else if (validPickerKey($('key').value.trim())) {
     status('Google Drive подключён. Нажми «Выбрать файл», чтобы открыть заметку.');
     if (pickerReady) $('pick').focus();
@@ -342,18 +388,20 @@ for (const field of ['key', 'project']) $(field).oninput = () => {
   persist();
   controls();
 };
-$('pick').onclick = () => {
+function chooseFile(expectedName) {
   if (!session || !pickerReady || busy || awaitingLogin || pickerWindow) return;
   if (Date.now() >= session.until) { expire(); return; }
   if (!validPickerKey($('key').value.trim()) || !validProject($('project').value.trim())) {
     $('setup').open = true;
     status('Для выбора файла введи ограниченный ключ Google Picker (AIza…) и числовой номер проекта.', true);
+    $(validPickerKey($('key').value.trim()) ? 'project' : 'key').focus();
     return;
   }
   try {
     const current = session;
     const view = new google.picker.DocsView(google.picker.ViewId.DOCS).setIncludeFolders(true)
       .setSelectFolderEnabled(false).setMode(google.picker.DocsViewMode.LIST);
+    if (expectedName) view.setQuery(expectedName);
     pickerWindow = new google.picker.PickerBuilder().addView(view).setOAuthToken(current.token)
       .setDeveloperKey($('key').value.trim()).setAppId($('project').value.trim()).setOrigin(location.origin).setCallback(data => {
         const action = data[google.picker.Response.ACTION];
@@ -364,20 +412,64 @@ $('pick').onclick = () => {
         if (action === google.picker.Action.CANCEL) return;
         const id = data[google.picker.Response.DOCUMENTS]?.[0]?.[google.picker.Document.ID];
         if (!validId(id)) { status('Google не вернул ID файла.', true); return; }
-        if (device.draft && device.draft.fileId !== id) {
+        const forDay = expectedName === NOW || expectedName === TASKS;
+        if (!forDay && device.draft && device.draft.fileId !== id) {
           status('Черновик привязан к другому файлу. Выбери исходный файл или сначала очисти черновик.', true);
           return;
         }
         run(async () => {
-          const result = await snapshot(id, request, device.noteNames[id]);
-          selectId(id, result.meta.name);
+          const pinned = device.noteNames[id];
+          if (expectedName && pinned && expectedName !== pinned) {
+            status('Выбери ' + expectedName + '. Этот файл уже выбран как ' + pinned + '.', true);
+            return;
+          }
+          let result;
+          try { result = await snapshot(id, sessionRequest(current), expectedName || pinned); }
+          catch (error) {
+            if (session === current) applyReadError(id, error, true);
+            return;
+          }
+          if (session !== current) return;
+          const name = result.meta.name;
+          if (name !== TEST_FILE) device.preferredIds[name] = id;
+          if (forDay && device.activeId && device.activeId !== id) {
+            rememberFile(id, name);
+            listFiles();
+            persist();
+            status(name + ' — источник обзора «Сегодня».');
+          } else {
+            selectId(id, name);
+            showRead(result, name + ' — файл прочитан из Drive.');
+          }
+          showDayFile(result);
           $('setup').open = false;
-          showRead(result, result.meta.name + ' — файл прочитан из Drive.');
+        }).then(() => {
+          if (expectedName === INBOX && session === current && device.activeId === id && readAt) focusDraft();
         });
       }).build();
     controls();
     pickerWindow.setVisible(true);
   } catch (error) { pickerWindow = null; fail(error); controls(); }
+}
+$('pick').onclick = () => chooseFile();
+for (const button of document.querySelectorAll('[data-day-pick]')) {
+  button.onclick = () => chooseFile(button.dataset.dayPick);
+}
+$('today-refresh').onclick = () => run(() => refreshFiles(dayIds()));
+function focusDraft() {
+  $('capture').scrollIntoView({block: 'center'});
+  if (!$('thought').disabled) $('thought').focus();
+  else if (!$('save').disabled) $('save').focus();
+}
+$('today-capture').onclick = async () => {
+  if (device.draft) { focusDraft(); return; }
+  const id = captureId();
+  if (!id) { chooseFile(INBOX); return; }
+  if (device.activeId !== id || !readAt) {
+    selectId(id, INBOX);
+    await run(readActive);
+  }
+  if (session && readAt && device.activeId === id) focusDraft();
 };
 $('known').onchange = () => {
   if (device.draft || !device.fileIds.includes($('known').value)) return;
@@ -413,7 +505,9 @@ $('save').onclick = () => run(async () => {
   } else if (!persist()) {
     return;
   }
-  const {verified, already} = await saveDraft(draft, request, name);
+  const current = session;
+  const {verified, already} = await saveDraft(draft, sessionRequest(current), name);
+  if (session !== current) return;
   show(verified);
   finishDraft(already ? 'Запись уже была в Drive. Повтор подтверждён без дубля.' : 'Записано в ' + name + ' и подтверждено повторным чтением.');
 });
@@ -435,24 +529,29 @@ window.addEventListener('storage', event => {
       storageWarning('Личные данные изменились в другой вкладке. Проверь свой черновик и обнови страницу.');
     } else {
       const previousId = device.activeId;
+      const previousSources = dayIds();
       device = readDevice(latest);
       stored = latest;
       syncFields();
       listFiles();
-      if (previousId !== device.activeId) {
-        clearPreview();
-        if (session && device.activeId) run(readActive);
-      }
+      if (previousId !== device.activeId) clearPreview();
+      const changed = dayIds().filter(id => id && !previousSources.includes(id));
+      if (previousId !== device.activeId && device.activeId) changed.push(device.activeId);
+      if (session && changed.length) run(() => refreshFiles(changed));
     }
   } catch {
     storageWarning('Не удалось прочитать настройки, изменённые в другой вкладке.');
   }
   controls();
 });
-document.addEventListener('visibilitychange', () => { if (session && Date.now() >= session.until) expire(); });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) updateDayDate();
+  if (session && Date.now() >= session.until) expire();
+});
 window.addEventListener('pageshow', event => { if (event.persisted) location.reload(); });
 
 restore();
+updateDayDate();
 if (personal && canRestoreLegacy()) recoverLegacy();
 syncFields();
 listFiles();

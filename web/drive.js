@@ -1,4 +1,4 @@
-import {appendRecord, recordBlock, supportedNote, TEST_FILE, writableNote} from './core.js?v=0.3.0';
+import {appendRecord, recordBlock, supportedNote, TEST_FILE, writableNote} from './core.js?v=0.4.0';
 
 const FILES = 'https://www.googleapis.com/drive/v3/files/';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files/';
@@ -29,6 +29,7 @@ export function driveError(status, body, operation) {
   const codes = [...new Set(reasons)].join(', ');
   const error = new Error(`Google Drive · ${operation} · HTTP ${status}${codes ? ' (' + codes + ')' : ''}. ${advice}`);
   error.access = access;
+  error.httpStatus = status;
   return error;
 }
 
