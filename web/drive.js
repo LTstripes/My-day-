@@ -1,4 +1,4 @@
-import {appendRecord, recordBlock, validateTestFile} from './core.js';
+import {appendRecord, recordBlock, supportedNote, TEST_FILE, writableNote} from './core.js?v=0.3.0';
 
 const FILES = 'https://www.googleapis.com/drive/v3/files/';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files/';
@@ -15,7 +15,7 @@ export function driveError(status, body, operation) {
     advice = 'Нажми «Подключиться снова» и разреши My Day доступ к выбранным файлам.';
   } else if (status === 404 || has('appNotAuthorizedToFile', 'insufficientFilePermissions')) {
     access = 'file';
-    advice = 'Проверь аккаунт Google и право редактирования. Нажми «Выбрать файл» и укажи тот же My-Day-test.md.';
+    advice = 'Проверь аккаунт Google и доступ к заметке. Нажми «Выбрать файл» и укажи тот же файл.';
   } else if (has('SERVICE_DISABLED', 'accessNotConfigured', 'apiDisabled')) {
     advice = 'Проверь, что Google Drive API включён в проекте OAuth-клиента.';
   } else if (has('fileNotDownloadable')) {
@@ -37,37 +37,50 @@ async function metadata(id, request) {
   return response.json();
 }
 
-export async function snapshot(id, request) {
-  const before = await metadata(id, request);
-  if (before.id !== id || before.name !== 'My-Day-test.md' || before.mimeType?.startsWith('application/vnd.google-apps.') ||
-      Number(before.size) > MAX_BYTES || before.trashed || !before.capabilities?.canEdit) {
-    throw new Error('Выбери через Picker маленький редактируемый My-Day-test.md из тестового шаблона.');
+function checkFile(meta, id, expectedName) {
+  if (meta.id !== id || meta.trashed || meta.mimeType?.startsWith('application/vnd.google-apps.') || !supportedNote(meta.name)) {
+    throw new Error('Выбери Мысли.md, Now.md, To Do now.md или My-Day-test.md из тестового шаблона.');
   }
+  if (expectedName && meta.name !== expectedName) {
+    throw new Error('Имя выбранного файла изменилось. Ожидался ' + expectedName + '. Проверь название в Drive.');
+  }
+  if (Number(meta.size) > MAX_BYTES) throw new Error('Заметка превышает лимит 500 КБ.');
+  if (writableNote(meta.name) && !meta.capabilities?.canEdit) throw new Error('Для записи в ' + meta.name + ' требуется право редактирования.');
+}
+
+export async function snapshot(id, request, expectedName) {
+  const before = await metadata(id, request);
+  checkFile(before, id, expectedName);
   const response = await request(FILES + encodeURIComponent(id) + '?alt=media');
   const bytes = await response.arrayBuffer();
-  if (bytes.byteLength > MAX_BYTES) throw new Error('Тестовый файл слишком большой.');
+  if (bytes.byteLength > MAX_BYTES) throw new Error('Заметка превышает лимит 500 КБ.');
   let content;
   try { content = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes); }
-  catch { throw new Error('Тестовая заметка должна быть сохранена в UTF-8.'); }
+  catch { throw new Error('Заметка должна быть сохранена в UTF-8.'); }
   const after = await metadata(id, request);
+  checkFile(after, id, before.name);
   if (!before.version || before.version !== after.version) throw new Error('Не удалось подтвердить версию файла. Нажми «Обновить».');
-  validateTestFile(after, content);
+  if (after.name === TEST_FILE && !/^\uFEFF?# My Day test\r?\n/.test(content)) {
+    throw new Error('Для первой проверки нужен My-Day-test.md с заголовком из тестового шаблона.');
+  }
   return {meta: after, content};
 }
 
-export async function saveDraft(draft, request) {
-  const current = await snapshot(draft.fileId, request);
+export async function saveDraft(draft, request, expectedName) {
+  if (!writableNote(expectedName)) throw new Error('Эта заметка открывается только для чтения.');
+  const current = await snapshot(draft.fileId, request, expectedName);
   const next = appendRecord(current.content, draft);
   if (!next.already) {
     const bytes = new TextEncoder().encode(next.content);
-    if (bytes.length > MAX_BYTES) throw new Error('С этой записью файл превысит лимит тестовой версии (500 КБ).');
+    if (bytes.length > MAX_BYTES) throw new Error('С этой записью файл превысит лимит 500 КБ.');
     const latest = await metadata(draft.fileId, request);
+    checkFile(latest, draft.fileId, expectedName);
     if (latest.version !== current.meta.version) throw new Error('Файл изменился перед записью. Повтори попытку.');
     await request(UPLOAD + encodeURIComponent(draft.fileId) + '?uploadType=media', {
       method: 'PATCH', headers: {'Content-Type': current.meta.mimeType || 'text/markdown; charset=UTF-8'}, body: bytes
     });
   }
-  const verified = await snapshot(draft.fileId, request);
+  const verified = await snapshot(draft.fileId, request, expectedName);
   if (!verified.content.includes(recordBlock(draft)) || (!next.already && !verified.content.startsWith(current.content))) {
     throw new Error('Не удалось подтвердить исходный текст и запись. Проверь файл перед повтором.');
   }
