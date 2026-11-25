@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Интерактивный эскиз My Day: сайт, Android и виджеты. Только примеры, без подключения к данным.">
+<title>Мой день — эскиз приложения и виджетов</title>
+<style>
+:root{--bg:#eef3ef;--surface:#fff;--ink:#193d32;--muted:#5b7067;--line:#d6e1da;--accent:#27694e;--on:#fff;--soft:#e3f0e7;--shadow:0 20px 70px #173a2c12;font:16px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:light}
+@media(prefers-color-scheme:dark){:root{--bg:#111b17;--surface:#1c2a23;--ink:#e5f1e9;--muted:#adbdaf;--line:#35483c;--accent:#a7d8b8;--on:#173e29;--soft:#2c4434;--shadow:0 20px 70px #0003;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}button,input,textarea{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:3px}button:disabled{cursor:default;opacity:.6}button{color:inherit}a{color:var(--accent)}h1,h2,h3,p{margin:0}h1{font-size:clamp(1.8rem,5vw,2.4rem);font-weight:650;letter-spacing:-.045em}h2{font-size:1.65rem;line-height:1.25;font-weight:600;letter-spacing:-.03em}h3{font-size:1rem;font-weight:600}small,.meta{font-size:.8125rem;color:var(--muted);line-height:1.5}.label{font-size:.875rem;color:var(--muted)}[hidden]{display:none!important}
+.page{max-width:960px;margin:auto;padding:32px 20px 40px}.intro{max-width:650px;margin-bottom:22px}.intro p{margin-top:8px;color:var(--muted)}.demo-label{display:inline-block;margin-bottom:10px;font-size:.8125rem;color:var(--muted)}.mode-switch{display:flex;flex-wrap:wrap;gap:7px;margin:22px 0}.mode-button{padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:.875rem;min-height:44px}.mode-button[aria-pressed=true]{background:var(--accent);color:var(--on);border-color:var(--accent)}
+.stage{min-height:470px;display:flex;align-items:flex-start;justify-content:center;padding:12px 0 22px}.app{width:100%;max-width:580px;background:var(--surface);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);overflow:hidden}.app-header{padding:19px 24px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center}.logo{background:var(--accent);color:var(--on);width:34px;height:34px;display:grid;place-items:center;border-radius:11px;font-weight:600}.brand{font-weight:600}.app-header .meta{margin-left:auto}.app-main{padding:24px;min-height:460px}.subline{margin-top:6px;color:var(--muted);font-size:.875rem}.focus{background:var(--soft);padding:17px 18px;border-radius:15px;margin:22px 0}.focus p{margin-top:5px}.section-head{margin:23px 0 10px;display:flex;justify-content:space-between;gap:10px;align-items:center}.calendar-row{display:flex;gap:17px;align-items:center;border-bottom:1px solid var(--line);padding:11px 0 16px}.time{font-size:1rem;font-variant-numeric:tabular-nums;font-weight:600}.calendar-row p{font-size:1rem}.task-list{display:grid;gap:2px}.task{display:flex;align-items:flex-start;gap:11px;padding:10px 0;min-height:44px}.task input{width:20px;height:20px;margin:3px 0 0;flex:none;accent-color:var(--accent)}.task input:checked+span{text-decoration:line-through;color:var(--muted)}.task span{font-size:1rem;line-height:1.5}.primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;border:0;border-radius:12px;padding:12px 17px;min-height:46px;background:var(--accent);color:var(--on);font-weight:550}.secondary{border:1px solid var(--line);background:var(--surface);border-radius:11px;padding:10px 15px;min-height:44px;font-size:.875rem}.capture-button{margin-top:19px}.app-nav{padding:9px;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(4,1fr);gap:4px}.app-nav button{border:0;background:transparent;color:var(--muted);padding:11px 3px;border-radius:11px;min-height:44px;font-size:.875rem}.app-nav button[aria-current=page]{background:var(--soft);color:var(--ink);font-weight:600}
+.capture-form{margin:22px 0}.capture-form label{display:block;font-size:.875rem;margin-bottom:8px}.capture-form textarea{width:100%;min-height:118px;resize:vertical;border:1px solid var(--line);border-radius:13px;background:var(--bg);color:var(--ink);padding:12px 14px}.capture-form textarea::placeholder,.widget-input::placeholder{color:var(--muted)}.capture-form .primary{margin-top:10px}.note{padding:15px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}.note p{margin-top:5px;white-space:pre-wrap}.plan{background:var(--bg);border:1px solid var(--line);padding:18px;border-radius:15px;margin-top:16px}.plan p{margin:8px 0}.activity{display:flex;gap:12px;border-bottom:1px solid var(--line);padding:16px 0}.activity-mark{width:26px;height:26px;flex:none;background:var(--soft);border-radius:9px;text-align:center}.activity p{font-size:.9375rem}.activity .meta{display:block;margin-top:4px}.provider-note{padding:15px 0;font-size:.875rem;color:var(--muted)}
+.widget-stage{width:100%;max-width:440px}.widget-explainer{margin-bottom:15px;color:var(--muted);font-size:.875rem}.widget{padding:22px;border-radius:26px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow)}.widget.windows{border-radius:15px}.widget-header{display:flex;gap:12px;justify-content:space-between;align-items:center;margin-bottom:16px}.widget-title{font-size:1.1rem;font-weight:600}.widget-refresh{border:0;background:var(--soft);border-radius:10px;min-height:44px;padding:8px 12px;font-size:.875rem}.next-event{background:var(--soft);border-radius:14px;padding:13px 15px;margin-bottom:12px}.next-event .label{display:block;font-size:.8125rem;margin-bottom:3px}.widget .task span{font-size:.9375rem}.widget-form{display:flex;gap:7px;margin-top:13px}.widget-input{width:100%;min-width:0;border:1px solid var(--line);border-radius:11px;background:var(--bg);color:var(--ink);padding:10px 12px;font-size:1rem}.widget-save{border:0;border-radius:11px;background:var(--accent);color:var(--on);padding:10px 13px;min-height:44px;font-size:.875rem}.widget-sync{margin-top:13px;font-size:.8125rem;color:var(--muted)}
+.demo-controls{max-width:580px;margin:4px auto 0;padding-top:17px;border-top:1px solid var(--line)}.demo-controls p{font-size:.875rem;color:var(--muted);margin:10px 0}.live-message{min-height:24px;margin-top:10px;font-size:.875rem;color:var(--muted)}.footer{margin:24px auto 0;max-width:580px;font-size:.8125rem;color:var(--muted)}
+@media(max-width:480px){.page{padding:20px 12px 28px}.mode-switch{gap:5px}.mode-button{padding:10px;font-size:.8125rem}.app-header{padding:16px}.app-main{padding:20px 17px}.app-nav button{font-size:.8125rem}.widget{padding:18px}.widget-form{flex-wrap:wrap}.widget-input{flex:1 1 180px}.widget-save{flex:0 0 auto}.stage{min-height:420px}.intro p{font-size:.9375rem}}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="intro">
+    <span class="demo-label">Макет · примеры, данные никуда не отправляются</span>
+    <h1>Мой день</h1>
+    <p>Планы, заметки и помощник — одно пространство на разных экранах.</p>
+  </header>
+  <nav class="mode-switch" aria-label="Вариант интерфейса">
+    <button class="mode-button" data-mode="app" aria-pressed="true">Приложение</button>
+    <button class="mode-button" data-mode="android" aria-pressed="false">Android-виджет</button>
+    <button class="mode-button" data-mode="windows" aria-pressed="false">Виджет Windows</button>
+  </nav>
+  <div class="stage">
+    <section class="app" data-surface="app" aria-label="Эскиз сайта и Android-приложения">
+      <header class="app-header"><span class="logo" aria-hidden="true">м</span><span class="brand">Мой день</span><span class="meta">Демо</span></header>
+      <main class="app-main">
+        <section data-panel="today" aria-label="Сегодня">
+          <h2>Сегодня</h2><p class="subline">Пример дня · местное время</p>
+          <div class="focus"><span class="label">Сейчас важно · Now</span><p>Закончить главное и оставить вечер свободным.</p></div>
+          <div class="section-head"><h3>Ближайшее событие</h3><span class="meta">Календарь</span></div>
+          <div class="calendar-row"><span class="time">18:30</span><div><p>Встреча по проекту</p><span class="meta">Условное событие · 30 минут</span></div></div>
+          <div class="section-head"><h3>Выбрано на сегодня</h3><span class="meta">To Do now</span></div>
+          <div class="task-list" data-tasks="app"></div>
+          <button class="primary capture-button" data-open="inbox">+ Записать мысль</button>
+        </section>
+        <section data-panel="inbox" aria-label="Заметки и быстрый ввод" hidden>
+          <h2>Мысли</h2><p class="subline">Записать сейчас, разобрать позже</p>
+          <form class="capture-form" data-capture="app"><label for="thought">Что хочется сохранить?</label><textarea id="thought" name="thought" maxlength="3000" placeholder="Идея, вопрос или ссылка…"></textarea><button class="primary" type="submit">Добавить в макет</button></form>
+          <div class="section-head"><h3>Записи</h3><span class="meta" data-note-count>1 пример</span></div>
+          <div data-notes></div>
+        </section>
+        <section data-panel="plans" aria-label="Планы" hidden>
+          <h2>Планы</h2><p class="subline">Контекст и ближайший шаг</p>
+          <article class="plan"><h3>Поездка</h3><p>Маршрут, бронирования и места, куда хочется попасть.</p><span class="meta">Следующий шаг: проверить план · пример</span></article>
+          <article class="plan"><h3>Новое приложение</h3><p>Проверить, как одна запись появляется на сайте, в телефоне и у помощника.</p><span class="meta">Следующий шаг: проверить общий источник данных</span></article>
+          <p class="provider-note">В будущем здесь будут выбранные материалы из Obsidian.</p>
+        </section>
+        <section data-panel="assistant" aria-label="Помощник" hidden>
+          <h2>Помощник</h2><p class="subline">Что обработано и где посмотреть результат</p>
+          <div data-activity></div>
+          <div class="plan"><h3>Выбор модели</h3><p>Облачные модели по API и небольшая модель на телефоне.</p><span class="meta">Пожелание на развитие · подключений в макете нет</span></div>
+        </section>
+      </main>
+      <nav class="app-nav" aria-label="Разделы приложения">
+        <button data-open="today" aria-current="page">Сегодня</button><button data-open="inbox">Мысли</button><button data-open="plans">Планы</button><button data-open="assistant">Помощник</button>
+      </nav>
+    </section>
+    <section class="widget-stage" data-surface="android" aria-label="Концепция Android-виджета" hidden>
+      <p class="widget-explainer">Эскиз виджета на главном экране Android. Нативный виджет ещё предстоит реализовать.</p>
+      <div class="widget"><div class="widget-header"><span class="widget-title">Мой день</span><button class="widget-refresh" data-refresh>Обновить</button></div><div class="next-event"><span class="label">Ближайшее · пример</span><span class="time">18:30</span> · Встреча по проекту</div><div class="task-list" data-tasks="android"></div><button class="primary capture-button" type="button" id="android-capture">+ Записать мысль</button><p class="widget-sync" data-widget-state>Кнопка открывает быстрый ввод в приложении</p></div>
+    </section>
+    <section class="widget-stage" data-surface="windows" aria-label="Концепция виджета рабочего стола Windows" hidden>
+      <p class="widget-explainer">Эскиз компактного окна на рабочем столе Windows. Это не панель системных Widgets и пока не установленная программа.</p>
+      <div class="widget windows"><div class="widget-header"><span class="widget-title">Мой день</span><button class="widget-refresh" data-refresh>Обновить</button></div><div class="next-event"><span class="label">Ближайшее · пример</span><span class="time">18:30</span> · Встреча по проекту</div><div class="task-list" data-tasks="windows"></div><form class="widget-form" data-capture="windows"><input class="widget-input" name="thought" maxlength="3000" aria-label="Мысль из виджета Windows" placeholder="Быстрая мысль…"><button type="submit" class="widget-save">Добавить</button></form><p class="widget-sync" data-widget-state>Концепция · общие данные в этом макете</p></div>
+    </section>
+  </div>
+  <aside class="demo-controls" aria-label="Демонстрация общего состояния">
+    <button class="secondary" id="model-update" type="button">Показать принятое обновление от модели</button>
+    <p>В примере добавится одно согласованное дело. Переключи экран — изменение будет видно в приложении и обоих виджетах.</p>
+    <div class="live-message" id="live-message" aria-live="polite"></div>
+  </aside>
+  <footer class="footer">Все записи живут только в памяти открытой страницы и исчезнут после перезагрузки. Google Drive, календарь, авторизация и модели здесь не подключены.</footer>
+</div>
+<script>
+(() => {
+  const tasks = [{id:'trip',text:'Проверить план поездки',done:false},{id:'letter',text:'Ответить на важное письмо',done:false}];
+  const notes = [{text:'Посмотреть интересное место и сохранить впечатления.',origin:'Пример · Inbox'}];
+  const activity = [{text:'Здесь появятся результаты обработки заметок.',detail:'Пример интерфейса · действий с реальными данными нет'}];
+  const message = document.getElementById('live-message');
+  function announce(text) { message.textContent = text; }
+  function showPanel(name) {
+    document.querySelectorAll('[data-panel]').forEach(p => { p.hidden = p.dataset.panel !== name; });
+    document.querySelectorAll('.app-nav [data-open]').forEach(b => { if (b.dataset.open === name) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); });
+  }
+  function showMode(name) {
+    document.querySelectorAll('[data-surface]').forEach(s => { s.hidden = s.dataset.surface !== name; });
+    document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed',String(b.dataset.mode === name)));
+  }
+  function renderTasks() {
+    document.querySelectorAll('[data-tasks]').forEach(list => {
+      list.replaceChildren();
+      tasks.forEach(task => {
+        const label = document.createElement('label'); label.className = 'task';
+        const input = document.createElement('input'); input.type = 'checkbox'; input.checked = task.done;
+        const text = document.createElement('span'); text.textContent = task.text;
+        input.addEventListener('change',() => { task.done = input.checked; renderTasks(); announce('Отметка изменена во всех вариантах макета.'); });
+        label.append(input,text); list.append(label);
+      });
+    });
+  }
+  function renderNotes() {
+    const list = document.querySelector('[data-notes]'); list.replaceChildren();
+    notes.forEach(note => { const article = document.createElement('article'); article.className = 'note'; const source = document.createElement('span'); source.className = 'meta'; source.textContent = note.origin; const text = document.createElement('p'); text.textContent = note.text; article.append(source,text); list.append(article); });
+    document.querySelector('[data-note-count]').textContent = 'Всего в макете: ' + notes.length;
+  }
+  function renderActivity() {
+    const list = document.querySelector('[data-activity]'); list.replaceChildren();
+    activity.forEach(item => { const row = document.createElement('div'); row.className = 'activity'; const mark = document.createElement('span'); mark.className = 'activity-mark'; mark.textContent = '·'; mark.setAttribute('aria-hidden','true'); const text = document.createElement('p'); text.textContent = item.text; const detail = document.createElement('span'); detail.className = 'meta'; detail.textContent = item.detail; text.append(detail); row.append(mark,text); list.append(row); });
+  }
+  document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click',() => showMode(b.dataset.mode)));
+  document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click',() => showPanel(b.dataset.open)));
+  document.getElementById('android-capture').addEventListener('click',() => { showMode('app'); showPanel('inbox'); document.getElementById('thought').focus(); announce('Открыт быстрый ввод из Android-виджета.'); });
+  document.querySelectorAll('[data-capture]').forEach(form => form.addEventListener('submit',event => {
+    event.preventDefault(); const field = form.elements.thought; const value = field.value.trim();
+    if (!value) { announce('Напиши пару слов для примера.'); field.focus(); return; }
+    const origins = {app:'Приложение',android:'Android-виджет',windows:'Виджет Windows'};
+    notes.unshift({text:value,origin:origins[form.dataset.capture] + ' · только в макете'});
+    activity.unshift({text:'Новая запись ждёт разбора.',detail:origins[form.dataset.capture] + ' · демонстрация'});
+    field.value = ''; renderNotes(); renderActivity(); announce('Запись добавлена в макет. Она видна в разделе «Мысли».');
+    if (form.dataset.capture === 'app') showPanel('inbox');
+  }));
+  document.querySelectorAll('[data-refresh]').forEach(b => b.addEventListener('click',() => { document.querySelectorAll('[data-widget-state]').forEach(s => { s.textContent = 'В макете обновлено только что'; }); announce('Показано обновление виджетов. Сетевого запроса не было.'); }));
+  document.getElementById('model-update').addEventListener('click',event => {
+    if (tasks.some(t => t.id === 'model')) return;
+    tasks.push({id:'model',text:'Выбрать время для нового проекта',done:false});
+    activity.unshift({text:'В примере помощник сохранил согласованное дело.',detail:'«Выбрать время для нового проекта» · демонстрация'});
+    renderTasks(); renderActivity(); event.currentTarget.disabled = true; event.currentTarget.textContent = 'Пример обновления добавлен';
+    announce('Новое дело видно в приложении, Android-виджете и виджете Windows.');
+  });
+  renderTasks(); renderNotes(); renderActivity();
+})();
+</script>
+</body>
+</html>
