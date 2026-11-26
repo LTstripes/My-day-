@@ -1,5 +1,5 @@
 import {appendRecord, lfText, recordDelivery, supportedNote, TEST_FILE, writableNote} from './core.js?v=0.14.0';
-import {validPlanName} from './device.js?v=0.14.0';
+import {validMarkdownName} from './device.js?v=0.15.0';
 
 const FILES = 'https://www.googleapis.com/drive/v3/files/';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files/';
@@ -46,10 +46,10 @@ async function metadata(id, request) {
 }
 
 function checkFile(meta, id, expectedName, mode = 'note') {
-  const plan = mode === 'plan';
+  const markdown = mode === 'markdown';
   if (meta.id !== id || meta.trashed || meta.mimeType?.startsWith('application/vnd.google-apps.') ||
-      !(plan ? validPlanName(meta.name) : supportedNote(meta.name))) {
-    throw new Error(plan ? 'Выбери Markdown-файл плана с расширением .md.' :
+      !(markdown ? validMarkdownName(meta.name) : supportedNote(meta.name))) {
+    throw new Error(markdown ? 'Выбери обычный Markdown-файл с расширением .md.' :
       'Выбери Мысли.md, Now.md, To Do now.md или My-Day-test.md из тестового шаблона.');
   }
   if (expectedName && meta.name !== expectedName) {
@@ -63,9 +63,11 @@ export function snapshot(id, request, expectedName, {viewOnly = false} = {}) {
   return readSnapshot(id, request, expectedName, viewOnly ? 'view' : 'note');
 }
 
-export function planSnapshot(id, request, expectedName) {
-  return readSnapshot(id, request, expectedName, 'plan');
+export function markdownSnapshot(id, request, expectedName) {
+  return readSnapshot(id, request, expectedName, 'markdown');
 }
+
+export {markdownSnapshot as planSnapshot};
 
 async function readSnapshot(id, request, expectedName, mode) {
   const before = await metadata(id, request);
@@ -80,7 +82,7 @@ async function readSnapshot(id, request, expectedName, mode) {
   checkFile(after, id, before.name, mode);
   if (!before.version || !after.version) throw new Error('Drive не вернул версию файла. Нажми «Обновить».');
   if (before.version !== after.version) throw new SnapshotVersionChanged();
-  if (mode !== 'plan' && after.name === TEST_FILE && !/^\uFEFF?# My Day test\r?\n/.test(content)) {
+  if (mode !== 'markdown' && after.name === TEST_FILE && !/^\uFEFF?# My Day test\r?\n/.test(content)) {
     throw new Error('Для первой проверки нужен My-Day-test.md с заголовком из тестового шаблона.');
   }
   return {meta: after, content};

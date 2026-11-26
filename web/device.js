@@ -7,7 +7,7 @@ export const DEFAULT_PROJECT = '327713401108';
 export const validPickerKey = value => typeof value === 'string' && /^AIza[A-Za-z0-9_-]{35}$/.test(value);
 export const validProject = value => typeof value === 'string' && /^\d{1,20}$/.test(value);
 export const validId = value => typeof value === 'string' && /^[\w-]{1,256}$/.test(value);
-export const validPlanName = value => typeof value === 'string' && /\.md$/i.test(value);
+export const validMarkdownName = value => typeof value === 'string' && /\.md$/i.test(value);
 
 export function newDevice() {
   return {version: 1, pickerKey: '', project: DEFAULT_PROJECT, fileIds: [], noteNames: Object.create(null),
@@ -45,12 +45,23 @@ export function readDevice(raw) {
 }
 
 export function withoutSource(device, id) {
-  if (device.taskDraft?.fileId === id) return device;
+  if (device.draft?.fileId === id || device.taskDraft?.fileId === id) return device;
   return normalizeDevice({...device,
     fileIds: device.fileIds.filter(fileId => fileId !== id),
+    notes: device.notes?.filter(note => note.id !== id),
     plans: device.plans?.filter(plan => plan.id !== id),
     plan: device.plan?.id === id ? null : device.plan
   });
+}
+
+function markdownSources(records) {
+  const sources = new Map();
+  for (const entry of Array.isArray(records) ? records : []) {
+    if (validId(entry?.id) && validMarkdownName(entry.name)) {
+      sources.set(entry.id, {id: entry.id, name: entry.name});
+    }
+  }
+  return sources;
 }
 
 function normalizeDevice(saved) {
@@ -61,12 +72,9 @@ function normalizeDevice(saved) {
   }
   if (validPickerKey(saved.pickerKey)) device.pickerKey = saved.pickerKey;
   if (validProject(saved.project)) device.project = saved.project;
-  const plans = new Map();
-  for (const plan of Array.isArray(saved.plans) ? saved.plans : []) {
-    if (validId(plan?.id) && validPlanName(plan.name)) plans.set(plan.id, {id: plan.id, name: plan.name});
-  }
+  const plans = markdownSources(saved.plans);
   // 0.10 stored the current plan on its own.
-  if (validId(saved.plan?.id) && validPlanName(saved.plan.name)) {
+  if (validId(saved.plan?.id) && validMarkdownName(saved.plan.name)) {
     plans.set(saved.plan.id, {id: saved.plan.id, name: saved.plan.name});
   }
   if (plans.size) {
@@ -74,14 +82,27 @@ function normalizeDevice(saved) {
     device.plan = plans.get(saved.plan?.id) ?? device.plans[0];
     if (plans.has(saved.pinnedPlanId)) device.pinnedPlanId = saved.pinnedPlanId;
   }
-  device.fileIds = [...new Set(saved.fileIds.filter(validId))];
+  const notes = markdownSources(saved.notes);
+  const roleIds = new Set(saved.fileIds.filter(validId));
   device.draft = readDraft(saved.draft);
   if (saved.draft != null && !device.draft) throw new Error('Не удалось прочитать сохранённый черновик.');
-  if (device.draft && !device.fileIds.includes(device.draft.fileId)) device.fileIds.push(device.draft.fileId);
-  // In 0.2 every remembered ID belonged to the test template.
-  for (const id of device.fileIds) {
-    const name = saved.noteNames?.[id];
-    device.noteNames[id] = supportedNote(name) ? name : TEST_FILE;
+  if (device.draft) roleIds.add(device.draft.fileId);
+  for (const id of roleIds) {
+    // In 0.2 saved source IDs had no names and belonged to the test template.
+    const name = saved.noteNames && Object.hasOwn(saved.noteNames, id) ? saved.noteNames[id] : TEST_FILE;
+    if (!supportedNote(name)) {
+      if (validMarkdownName(name) && !notes.has(id)) notes.set(id, {id, name});
+      // Preserve an existing draft and its exact destination even if its role is
+      // unsupported. The writer validates both the name and live file metadata.
+      if (device.draft?.fileId !== id) continue;
+    }
+    device.fileIds.push(id);
+    device.noteNames[id] = name;
+  }
+  if (notes.size) {
+    device.notes = [...notes.values()];
+    const selection = saved.readerId ?? saved.activeId;
+    device.readerId = notes.has(selection) ? selection : device.notes[0].id;
   }
   for (const name of [NOW, TASKS, INBOX]) {
     const id = saved.preferredIds?.[name];

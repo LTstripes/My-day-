@@ -3,10 +3,11 @@ import {createServer} from 'node:http';
 import assert from 'node:assert/strict';
 
 export const site = 'https://my-day.test/My-day-/';
+export const releaseLabel = 'My Day · ' + JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 export const original = '\uFEFF# My Day test\r\n\r\nИсходная строка.\r\n';
 const key = 'AIza' + 'p'.repeat(35);
 const bearer = 'synthetic-browser-token';
-const paths = new Map(['index.html', 'web/app.js', 'web/device.js', 'web/drive.js', 'web/core.js', 'web/day-view.js',
+const paths = new Map(['index.html', 'web/app.js', 'web/note-reader.js', 'web/note-views.js', 'web/device.js', 'web/drive.js', 'web/core.js', 'web/day-view.js',
   'web/today.js', 'web/task-entry.js', 'web/complete-task.js', 'web/search-match.js', 'web/search-view.js', 'web/handoff.js', 'web/reload.js', 'prototype/index.html']
   .map(path => [path, new URL('../' + path, import.meta.url)]));
 

@@ -1,0 +1,87 @@
+import {noteView} from './note-views.js?v=0.15.0';
+
+const $ = id => document.getElementById(id);
+const make = (tag, text) => {
+  const node = document.createElement(tag);
+  node.textContent = text;
+  return node;
+};
+
+export function initNoteReader() {
+  const select = $('reader-select'), view = $('reader-view'), content = $('reader-content');
+  const state = $('reader-state'), link = $('reader-link');
+  let sourceId = null, sourceName = '', defaultView = 'text', override = null, current = null;
+
+  function render() {
+    content.replaceChildren();
+    const visible = Boolean(current);
+    $('reader-display').hidden = !visible;
+    link.hidden = !visible;
+    if (!visible) { link.removeAttribute('href'); return; }
+    link.href = 'https://drive.google.com/open?id=' + encodeURIComponent(sourceId);
+    const result = noteView(current.content, {override, defaultView});
+    view.value = result.view;
+    $('reader-full').hidden = result.view === 'text';
+    $('reader-notice').textContent = result.notice || '';
+    if (result.view === 'text') {
+      content.append(make('pre', result.text));
+    } else if (result.view === 'plan') {
+      content.append(make('h4', 'Ближайшее действие'), make('p', result.action));
+    } else {
+      for (const group of result.groups) {
+        if (group.heading) content.append(make('h4', group.heading));
+        const list = document.createElement('ul');
+        for (const item of group.items) {
+          const row = document.createElement('li');
+          if (item.kind === 'open' || item.kind === 'done') {
+            const done = item.kind === 'done';
+            const mark = make('span', done ? '☑ ' : '☐ ');
+            mark.setAttribute('aria-hidden', 'true');
+            row.append(mark);
+            row.append(make('span', done ? 'Выполнено: ' : 'Открыто: '));
+            row.lastChild.className = 'visually-hidden';
+          }
+          row.append(item.text);
+          list.append(row);
+        }
+        content.append(list);
+      }
+    }
+  }
+  function clear(message = '', error = false) {
+    current = null;
+    render();
+    state.textContent = message || (sourceId ? 'Подключи Drive, чтобы прочитать заметку.' : '');
+    state.classList.toggle('error', error);
+  }
+  function setFiles(files, id, roleView) {
+    const chosen = files.find(file => file.id === id);
+    const changed = sourceId !== (chosen?.id ?? null) || sourceName !== (chosen?.name ?? '');
+    sourceId = chosen?.id ?? null;
+    sourceName = chosen?.name ?? '';
+    const roleChanged = defaultView !== roleView;
+    defaultView = roleView;
+    select.replaceChildren(new Option('Выбери заметку', ''));
+    for (const file of files) {
+      const duplicate = files.some(other => other.id !== file.id && other.name === file.name);
+      select.add(new Option(duplicate ? file.name + ' · ID ' + file.id : file.name, file.id));
+    }
+    select.value = sourceId ?? '';
+    $('reader-choices').hidden = !files.length;
+    if (changed) { override = null; clear(); }
+    else if (roleChanged && current) render();
+  }
+  view.onchange = () => { override = view.value; render(); };
+  $('reader-full').onclick = () => { override = 'text'; render(); view.focus(); };
+  return {
+    setFiles, clear,
+    reset() { override = null; clear(); },
+    show(result) {
+      if (result.meta.id !== sourceId || result.meta.name !== sourceName) return;
+      current = result;
+      render();
+      state.textContent = 'Прочитано из Drive · ' + new Date().toLocaleString('ru-RU');
+      state.classList.remove('error');
+    }
+  };
+}

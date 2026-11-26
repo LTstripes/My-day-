@@ -1,4 +1,4 @@
-import {taskPlaces} from './today.js?v=0.14.0';
+import {taskPlaces} from './today.js?v=0.15.0';
 
 export function initTaskEntry({edit, discard, submit, changed}) {
   const byId = id => document.getElementById(id);

@@ -1,6 +1,6 @@
 import {TASKS} from './core.js?v=0.14.0';
-import {MAX_BYTES, snapshot, SnapshotVersionChanged} from './drive.js?v=0.14.0';
-import {insertTask, taskDelivery, todayTasks} from './today.js?v=0.14.0';
+import {MAX_BYTES, snapshot, SnapshotVersionChanged} from './drive.js?v=0.15.0';
+import {insertTask, taskDelivery, todayTasks} from './today.js?v=0.15.0';
 
 const FILES = 'https://www.googleapis.com/drive/v2/files/';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v2/files/';

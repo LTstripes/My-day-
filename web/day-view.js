@@ -1,6 +1,6 @@
 import {NOW, TASKS} from './core.js?v=0.14.0';
-import {preferredFile} from './device.js?v=0.14.0';
-import {nowContext, todayTasks} from './today.js?v=0.14.0';
+import {preferredFile} from './device.js?v=0.15.0';
+import {nowContext, todayTasks} from './today.js?v=0.15.0';
 
 const panels = new Map([
   [NOW, {element: document.getElementById('today-context')}],

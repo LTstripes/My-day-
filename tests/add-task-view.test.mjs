@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {after, before, test} from 'node:test';
 import {chromium} from 'playwright-core';
-import {fixture, firstFile, saved} from './browser.mjs';
+import {fixture, firstFile, releaseLabel, saved} from './browser.mjs';
 
 const live = process.env.MY_DAY_ADD_TASK_SMOKE === 'live';
 const published = 'https://ltstripes.github.io/My-day-/';
@@ -21,7 +21,7 @@ async function setup(t, text, personal = true) {
     await ctx.route(published + '**', route => route.continue());
     page = await ctx.newPage();
     assert.equal((await page.goto(published)).status(), 200);
-    await page.getByText('My Day · 0.14.0', {exact: true}).waitFor();
+    await page.getByText(releaseLabel, {exact: true}).waitFor();
   } else page = await open();
   page.setDefaultTimeout(7000);
   await firstFile(page, personal);
