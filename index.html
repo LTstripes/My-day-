@@ -95,6 +95,11 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
   <div class="actions"><button id="disconnect" class="secondary" disabled>Отключиться</button><button id="forget" class="secondary" disabled>Забыть это устройство</button></div>
 </section>
 <section id="library"><h2>Мои заметки</h2>
+  <details id="source-manager" hidden><summary>Источники My Day</summary>
+    <label for="source-select">Источник</label><select id="source-select"></select>
+    <button id="source-remove" type="button" class="secondary" disabled>Убрать из My Day</button>
+    <p id="source-hint" class="meta muted" role="status">Файл останется в Google Drive.</p>
+  </details>
   <p>Выбери «Мысли.md» для быстрой записи, «Now.md» или «To Do now.md» для чтения.</p>
   <p id="first-pick">Для пробы подойдёт My-Day-test.md. Можно <a href="./web/My-Day-test.md" download="My-Day-test.md">скачать шаблон</a> и загрузить его в Drive.</p>
   <div id="known-files" hidden><label for="known">Открыть выбранную ранее заметку</label><select id="known"></select></div>
