@@ -1,6 +1,6 @@
-import {NOW, TASKS} from './core.js?v=0.4.0';
-import {preferredFile} from './device.js?v=0.4.0';
-import {nowContext, todayTasks} from './today.js?v=0.12.0';
+import {NOW, TASKS} from './core.js?v=0.14.0';
+import {preferredFile} from './device.js?v=0.14.0';
+import {nowContext, todayTasks} from './today.js?v=0.14.0';
 
 const panels = new Map([
   [NOW, {element: document.getElementById('today-context')}],
@@ -8,7 +8,15 @@ const panels = new Map([
 ]);
 let localDate = '', timeZone = '', midnightTimer;
 
-let complete, actionsEnabled = false;
+let complete, onSourceChange, actionsEnabled = false;
+export function onTaskSourceChange(handler) {
+  onSourceChange = handler;
+}
+export function taskSource() {
+  const panel = panels.get(TASKS);
+  if (!panel.id || !panel.readAt || panel.error) return null;
+  return {fileId: panel.id, version: panel.version, content: panel.content, canEdit: panel.canEdit, date: localDate};
+}
 export function onTaskCompletion(handler) {
   complete = handler;
 }
@@ -88,6 +96,7 @@ function render(name, panel) {
   if (error) message = readAt ? message + '. Данные могут быть устаревшими. ' + error : error;
   state.textContent = message;
   state.classList.toggle('error', Boolean(error));
+  if (name === TASKS) onSourceChange?.();
 }
 
 export function syncDaySources(device) {
@@ -110,7 +119,7 @@ export function clearDay() {
 export function showDayFile({meta, content}) {
   const panel = panels.get(meta.name);
   if (panel?.id !== meta.id) return;
-  Object.assign(panel, {content, canEdit: meta.capabilities?.canEdit === true, readAt: new Date(), error: ''});
+  Object.assign(panel, {content, version: meta.version, canEdit: meta.capabilities?.canEdit === true, readAt: new Date(), error: ''});
   render(meta.name, panel);
 }
 

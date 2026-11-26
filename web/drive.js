@@ -1,9 +1,9 @@
-import {appendRecord, lfText, recordDelivery, supportedNote, TEST_FILE, writableNote} from './core.js?v=0.12.0';
-import {validPlanName} from './device.js?v=0.10.0';
+import {appendRecord, lfText, recordDelivery, supportedNote, TEST_FILE, writableNote} from './core.js?v=0.14.0';
+import {validPlanName} from './device.js?v=0.14.0';
 
 const FILES = 'https://www.googleapis.com/drive/v3/files/';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files/';
-const MAX_BYTES = 500000;
+export const MAX_BYTES = 500000;
 
 export class SnapshotVersionChanged extends Error {
   constructor() {

@@ -32,9 +32,9 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
 #handoff-queue{margin-top:14px}#handoff-filter,#handoff-record{min-height:44px}#handoff-record{width:100%}#handoff-result{overflow-wrap:anywhere}
 [data-complete]{font-size:.86rem;padding:4px 10px;margin-inline-start:8px}
 </style>
-<script type="module" src="./web/app.js?v=0.13.0"></script>
+<script type="module" src="./web/app.js?v=0.14.0"></script>
 </head><body><main>
-<header class="masthead"><div><small>My Day · 0.13.0</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a><a href="./prototype/">Макет</a></nav></header>
+<header class="masthead"><div><small>My Day · 0.14.0</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a><a href="./prototype/">Макет</a></nav></header>
 <div class="connection-bar"><div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div><button id="connect" disabled>Подключить Google Drive</button></div>
 <section id="today" aria-labelledby="today-title">
   <div class="day-head"><div><h2 id="today-title">Сегодня</h2><p class="muted"><time id="today-date"></time> · <span id="today-zone"></span></p></div>
@@ -47,6 +47,13 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
     </article>
     <article id="today-tasks" class="day-card"><div class="source-head"><h3>Дела на сегодня</h3><small>To Do now.md</small></div>
       <div data-body class="day-body"></div><p data-state class="meta muted source-state" role="status"></p>
+      <form id="task-add-form" hidden>
+        <label for="task-text">Новое дело</label>
+        <input id="task-text" type="text" maxlength="300" autocomplete="off">
+        <div id="task-place-field" hidden><label for="task-place">Куда добавить</label><select id="task-place"></select></div>
+        <div class="actions"><button id="task-add" type="submit" disabled>Добавить дело</button><button id="task-discard" class="secondary" type="button" hidden>Очистить черновик дела</button></div>
+        <p id="task-status" class="meta muted" role="status"></p>
+      </form>
       <div class="source-foot"><button type="button" data-day-pick="To Do now.md" disabled>Выбрать To Do now.md</button><a data-open hidden target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>
     </article>
     <article id="today-plan" class="day-card" hidden><div class="source-head"><h3>Ближайшее действие по плану</h3><small id="today-plan-source"></small></div>

@@ -11,7 +11,7 @@ export function supportedNote(name) {
   return writableNote(name) || name === NOW || name === TASKS;
 }
 
-const recordMarker = /^<!-- my-day:(?:assistant:)?[\da-fA-F]{8}-(?:[\da-fA-F]{4}-){3}[\da-fA-F]{12} -->$/;
+const recordMarker = /^<!-- my-day:(?:(?:assistant|task):)?[\da-fA-F]{8}-(?:[\da-fA-F]{4}-){3}[\da-fA-F]{12} -->$/;
 const frontmatter = /^\uFEFF?---[ \t]*(?:\r\n|[\r\n])[\s\S]*?^(?:---|\.\.\.)[ \t]*(?:\r\n|[\r\n]|$)/m;
 const fenceDelimiter = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 

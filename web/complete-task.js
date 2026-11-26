@@ -1,6 +1,6 @@
-import {TASKS} from './core.js?v=0.12.0';
-import {snapshot, SnapshotVersionChanged} from './drive.js?v=0.13.0';
-import {todayTasks} from './today.js?v=0.12.0';
+import {TASKS} from './core.js?v=0.14.0';
+import {MAX_BYTES, snapshot, SnapshotVersionChanged} from './drive.js?v=0.14.0';
+import {insertTask, taskDelivery, todayTasks} from './today.js?v=0.14.0';
 
 const FILES = 'https://www.googleapis.com/drive/v2/files/';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v2/files/';
@@ -42,22 +42,30 @@ function completedContent({content, line, date}, current) {
   return {already: false, content: next};
 }
 
-export async function completeTask(selection, request) {
-  const id = selection.fileId;
-  const read = () => snapshot(id, request, TASKS, {viewOnly: true});
-  const current = await read();
-  const next = completedContent(selection, current);
-  if (next.already) return {verified: current, already: true};
-  if (!current.meta.capabilities?.canEdit) {
-    throw selectionError(current, 'Для отметки дела требуется право редактирования To Do now.md.');
-  }
+function readList(id, request) {
+  return snapshot(id, request, TASKS, {viewOnly: true});
+}
 
-  // Drive v2 exposes the file ETag. Bind it to the version of the bytes we actually read.
+function changedSelection(current) {
+  const error = selectionError(current, 'Список изменился перед записью. Сверь обновлённые дела и подтверди свой выбор ещё раз.');
+  error.reselect = true;
+  return error;
+}
+
+async function writeList(current, content, request) {
+  const id = current.meta.id;
+  if (!current.meta.capabilities?.canEdit) {
+    throw selectionError(current, 'Для записи дела требуется право редактирования To Do now.md.');
+  }
+  const bytes = new TextEncoder().encode(content);
+  if (bytes.byteLength > MAX_BYTES) throw selectionError(current, 'С новой задачей файл превысит лимит 500 КБ.');
+
+  // The v2 ETag must belong to the same version as the bytes used to construct the update.
   const path = encodeURIComponent(id);
   const response = await request(FILES + path + '?fields=id,version,etag');
   const tag = await response.json();
-  const changed = async () => selectionError(await read(), 'Список изменился перед записью. Выбери дело ещё раз.');
-  if (tag.id !== id || tag.version !== current.meta.version) throw await changed();
+  const changed = async () => ({verified: await readList(id, request), changed: true});
+  if (tag.id !== id || tag.version !== current.meta.version) return changed();
   if (typeof tag.etag !== 'string' || !/^"[^"\s]+"$/.test(tag.etag)) {
     throw selectionError(current, 'Drive не вернул метку версии для безопасной записи. Открой дело в источнике.');
   }
@@ -65,18 +73,58 @@ export async function completeTask(selection, request) {
     await request(UPLOAD + path + '?uploadType=media', {
       method: 'PUT',
       headers: {'If-Match': tag.etag, 'Content-Type': current.meta.mimeType || 'text/markdown; charset=UTF-8'},
-      body: new TextEncoder().encode(next.content)
+      body: bytes
     });
   } catch (error) {
-    if (error.httpStatus === 412) throw await changed();
+    if (error.httpStatus === 412) return changed();
+    if (!error.httpStatus || error.httpStatus === 408 || error.httpStatus >= 500) error.uncertain = true;
     throw error;
   }
-  const verified = await read().catch(error => {
-    if (error instanceof SnapshotVersionChanged) return read();
+  try {
+    const verified = await readList(id, request).catch(error => {
+      if (error instanceof SnapshotVersionChanged) return readList(id, request);
+      throw error;
+    });
+    return {verified, changed: false};
+  } catch (error) {
+    // The write was accepted. A readback error leaves delivery unresolved even for a 403/404.
+    error.uncertain = true;
     throw error;
-  });
+  }
+}
+
+export async function completeTask(selection, request) {
+  const current = await readList(selection.fileId, request);
+  const next = completedContent(selection, current);
+  if (next.already) return {verified: current, already: true};
+  const {verified, changed} = await writeList(current, next.content, request);
+  if (changed) throw changedSelection(verified);
   if (verified.content !== next.content) {
     throw selectionError(verified, 'Drive не подтвердил ожидаемое содержимое после записи. Проверь обновлённый список.');
   }
   return {verified, already: false};
+}
+
+function isTaskDelivered(file, draft) {
+  const delivery = taskDelivery(file.content, draft);
+  if (delivery === 'conflict') {
+    const error = selectionError(file, 'Метка дела неоднозначна или запись изменилась. Сверь дело в источнике.');
+    error.uncertain = true;
+    throw error;
+  }
+  return delivery === 'delivered';
+}
+
+export async function addTask(draft, request) {
+  const current = await readList(draft.fileId, request);
+  if (isTaskDelivered(current, draft)) return {verified: current, already: true};
+  if (draft.version !== current.meta.version) throw changedSelection(current);
+  const content = insertTask(current.content, draft);
+  const {verified, changed} = await writeList(current, content, request);
+  // Another tab may have delivered the same operation before our conditional update.
+  if (isTaskDelivered(verified, draft)) return {verified, already: changed};
+  if (changed) throw changedSelection(verified);
+  const error = selectionError(verified, 'Не удалось подтвердить добавленное дело. Сверь список в Drive перед повтором.');
+  error.uncertain = true;
+  throw error;
 }
