@@ -1,4 +1,5 @@
-import {noteView} from './note-views.js?v=0.15.0';
+import {noteView} from './note-views.js?v=0.16.0';
+import {mountChart} from './note-chart.js?v=0.16.0';
 
 const $ = id => document.getElementById(id);
 const make = (tag, text) => {
@@ -7,17 +8,19 @@ const make = (tag, text) => {
   return node;
 };
 
-export function initNoteReader() {
+export function initNoteReader(onSelectionChange = () => {}) {
   const select = $('reader-select'), view = $('reader-view'), content = $('reader-content');
   const state = $('reader-state'), link = $('reader-link');
   let sourceId = null, sourceName = '', defaultView = 'text', override = null, current = null;
+  let chartDraft = null, validChart = null;
 
   function render() {
     content.replaceChildren();
     const visible = Boolean(current);
     $('reader-display').hidden = !visible;
     link.hidden = !visible;
-    if (!visible) { link.removeAttribute('href'); return; }
+    validChart = null;
+    if (!visible) { link.removeAttribute('href'); onSelectionChange(); return; }
     link.href = 'https://drive.google.com/open?id=' + encodeURIComponent(sourceId);
     const result = noteView(current.content, {override, defaultView});
     view.value = result.view;
@@ -25,6 +28,12 @@ export function initNoteReader() {
     $('reader-notice').textContent = result.notice || '';
     if (result.view === 'text') {
       content.append(make('pre', result.text));
+    } else if (result.view === 'chart') {
+      mountChart(content, result.tables, chartDraft ?? result.chart, (draft, selection) => {
+        chartDraft = draft;
+        validChart = selection;
+        onSelectionChange();
+      });
     } else if (result.view === 'plan') {
       content.append(make('h4', 'Ближайшее действие'), make('p', result.action));
     } else {
@@ -47,6 +56,7 @@ export function initNoteReader() {
         content.append(list);
       }
     }
+    onSelectionChange();
   }
   function clear(message = '', error = false) {
     current = null;
@@ -68,16 +78,27 @@ export function initNoteReader() {
     }
     select.value = sourceId ?? '';
     $('reader-choices').hidden = !files.length;
-    if (changed) { override = null; clear(); }
+    if (changed) { override = null; chartDraft = null; clear(); }
     else if (roleChanged && current) render();
   }
   view.onchange = () => { override = view.value; render(); };
   $('reader-full').onclick = () => { override = 'text'; render(); view.focus(); };
   return {
     setFiles, clear,
-    reset() { override = null; clear(); },
+    selection() {
+      if (!current || (view.value === 'chart' && !validChart)) return null;
+      const meta = current.meta;
+      return {fileId:meta.id, name:meta.name, version:meta.version, canEdit:Boolean(meta.capabilities?.canEdit),
+        view:view.value, ...(validChart ? {chart:{...validChart}} : {})};
+    },
+    reset() { override = null; chartDraft = null; clear(); },
     show(result) {
       if (result.meta.id !== sourceId || result.meta.name !== sourceName) return;
+      if (chartDraft && current?.meta.version !== result.meta.version) {
+        // Line numbers disambiguate identical tables only in their original snapshot.
+        delete chartDraft.line;
+        if (!override) chartDraft = null;
+      }
       current = result;
       render();
       state.textContent = 'Прочитано из Drive · ' + new Date().toLocaleString('ru-RU');
