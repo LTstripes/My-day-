@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {searchNote} from '../web/search-match.js';
+import {readableNote} from '../web/core.js';
+
+test('a task operation marker is hidden while the result still highlights the source task', () => {
+  const marker = '<!-- my-day:task:30dc3c4c-e910-4b84-894d-352c9ac77dbc -->';
+  const source = '- Сверить заказ\r\n' + marker + '\r\n- [ ] Забрать посылку\r\n';
+  const hit = searchNote('To Do now.md', source, 'посылку').hits[0];
+  const view = readableNote(source);
+  assert.equal(view.text, '- Сверить заказ\r\n- [ ] Забрать посылку\r\n');
+  assert.equal(view.text.slice(view.offset(hit.start), view.offset(hit.end)), 'посылку');
+  assert.equal(searchNote('To Do now.md', source, 'my-day:task').total, 0);
+});
 
 test('Russian folded spelling, literal punctuation, and independent filename matches', () => {
   const text = '😀 Письмо [ЁЖ]+. и подпись [еж]+.';

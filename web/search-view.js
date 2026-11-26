@@ -1,4 +1,4 @@
-import {readableNote} from './core.js?v=0.6.1';
+import {readableNote} from './core.js?v=0.14.0';
 import {searchNote} from './search-match.js?v=0.5.0';
 
 const $ = id => document.getElementById(id);
