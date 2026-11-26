@@ -95,6 +95,7 @@ function render(name, panel) {
   if (name === TASKS && readAt && !panel.canEdit) message += ' · Только чтение';
   if (error) message = readAt ? message + '. Данные могут быть устаревшими. ' + error : error;
   state.textContent = message;
+  state.hidden = !id && !panel.ambiguous && !error;
   state.classList.toggle('error', Boolean(error));
   if (name === TASKS) onSourceChange?.();
 }
@@ -144,6 +145,7 @@ export function updateDayDate() {
     timeZone = zone;
     const date = document.getElementById('today-date');
     date.dateTime = iso;
+    date.title = zone;
     date.textContent = now.toLocaleDateString('ru-RU', {weekday: 'long', day: 'numeric', month: 'long'});
     document.getElementById('today-zone').textContent = zone;
     for (const [name, panel] of panels) render(name, panel);

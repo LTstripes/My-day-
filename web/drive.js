@@ -56,7 +56,11 @@ function checkFile(meta, id, expectedName, mode = 'note') {
     throw new Error('Имя выбранного файла изменилось. Ожидался ' + expectedName + '. Проверь название в Drive.');
   }
   if (Number(meta.size) > MAX_BYTES) throw new Error('Заметка превышает лимит 500 КБ.');
-  if (mode === 'note' && writableNote(meta.name) && !meta.capabilities?.canEdit) throw new Error('Для записи в ' + meta.name + ' требуется право редактирования.');
+  if (mode === 'note' && writableNote(meta.name) && !meta.capabilities?.canEdit) {
+    const error = new Error('Для записи в ' + meta.name + ' требуется право редактирования.');
+    error.readOnly = true;
+    throw error;
+  }
 }
 
 export function snapshot(id, request, expectedName, {viewOnly = false} = {}) {
