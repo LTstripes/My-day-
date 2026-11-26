@@ -1037,8 +1037,10 @@ function submitTask(place) {
         taskEntry.message('Drive подтвердил дело. Не удалось очистить местный черновик.', true);
         return;
       }
-      taskEntry.message(already ? 'Дело уже есть в Drive. Повтор подтверждён без дубля.' :
-        'Дело добавлено и подтверждено чтением из Drive.');
+      const message = already ? 'Дело уже есть в Drive. Повтор подтверждён без дубля.' :
+        'Дело добавлено и подтверждено чтением из Drive.';
+      taskEntry.message(message);
+      if (!verified.meta.capabilities?.canEdit) status(message);
     } catch (error) {
       if (!selected()) return;
       if (error.current) displayTaskList(error.current);

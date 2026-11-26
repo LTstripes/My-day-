@@ -126,7 +126,7 @@ test('reload and reconnect confirm a pending delivery with its original id and k
   assert.deepEqual((await saved(page)).taskDraft, pending);
   await page.locator('#connect').click();
   await page.locator('#task-add:enabled').click();
-  await page.locator('#task-status').filter({hasText: 'без дубля'}).waitFor();
+  await page.locator('#status').filter({hasText: 'без дубля'}).waitFor();
   assert.equal(state.patches, 1);
   assert.equal(file.text.split(taskText).length, 2);
   assert.equal((await saved(page)).draft.text, inboxText);
