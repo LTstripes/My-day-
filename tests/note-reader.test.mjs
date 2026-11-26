@@ -37,6 +37,7 @@ test('selected notes apply their views, full text and search keep every paragrap
   const {page, pick, panel, state} = await prepare(t);
   await page.locator('#thought').fill('Мысль для Inbox');
   await pick('tasks','[data-day-pick="To Do now.md"]');
+  await page.locator('#task-entry summary').click();
   await page.locator('#task-text').fill('Отдельный черновик дела');
   const initial = await saved(page);
   await pick('books');

@@ -29,6 +29,11 @@ async function setup(t, text, personal = true) {
   await page.evaluate(id => { pickTest.id = id; }, fileId);
   await page.locator('[data-day-pick="To Do now.md"]').click();
   const field = page.locator('#task-text');
+  const entry = page.locator('#task-entry');
+  await entry.waitFor();
+  assert.equal(await field.isVisible(), false);
+  assert.equal(await page.locator('#task-add').isVisible(), false);
+  await entry.locator('summary').click();
   await field.fill(taskText);
   return {ctx, state, file, page, field, add: page.locator('#task-add'),
     row: page.locator('#today-tasks li').filter({hasText: taskText})};
@@ -41,6 +46,7 @@ test('two immediate submits create one completable task and preserve unrelated I
   await add.evaluate(button => { button.click(); button.click(); });
   await row.waitFor();
   await page.waitForFunction(() => document.querySelector('#task-text').value === '');
+  await page.locator('#task-status').filter({hasText: 'подтверждено чтением'}).waitFor();
   assert.equal(state.patches, 1);
   assert(file.text.startsWith(source));
   assert.equal(file.text.split(taskText).length, 2);
@@ -123,6 +129,8 @@ test('reload and reconnect confirm a pending delivery with its original id and k
   const pending = (await saved(page)).taskDraft;
   file.canEdit = false;
   await page.reload();
+  await page.locator('#task-text').waitFor();
+  assert.equal(await page.locator('#task-text').inputValue(), taskText);
   assert.deepEqual((await saved(page)).taskDraft, pending);
   await page.locator('#connect').click();
   await page.locator('#task-add:enabled').click();
@@ -130,6 +138,31 @@ test('reload and reconnect confirm a pending delivery with its original id and k
   assert.equal(state.patches, 1);
   assert.equal(file.text.split(taskText).length, 2);
   assert.equal((await saved(page)).draft.text, inboxText);
+});
+
+test('a draft can stay folded during other edits and reopens after reload', async t => {
+  const {page, field, state} = await setup(t, '- Дело\n');
+  await page.locator('#task-entry summary').click();
+  await page.locator('#thought').fill('Другая мысль');
+  assert.equal(await field.isVisible(), false);
+  await page.reload();
+  await field.waitFor();
+  assert.equal(await field.inputValue(), taskText);
+  assert.equal(state.patches, 0);
+});
+
+test('selecting another task file folds the empty form and clears the previous confirmation', async t => {
+  const {page, add, field, state} = await setup(t, '- Первый список\n');
+  await add.click();
+  const status = page.locator('#task-status');
+  await status.filter({hasText:'подтверждено чтением'}).waitFor();
+  state.files.set('new-list', {name:'To Do now.md', text:'- Второй список\n', version:1});
+  await page.evaluate(() => { pickTest.id = 'new-list'; });
+  await page.locator('[data-day-pick="To Do now.md"]').click();
+  await page.locator('#today-tasks li').filter({hasText:'Второй список'}).waitFor();
+  assert.equal(await field.isVisible(), false);
+  assert.equal(await status.textContent(), '');
+  assert.equal(state.patches, 1);
 });
 
 test('a task draft stays bound to its original file even when a namesake is picked', async t => {
