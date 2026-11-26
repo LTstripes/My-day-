@@ -3,6 +3,7 @@ import {createServer} from 'node:http';
 import assert from 'node:assert/strict';
 
 export const site = 'https://my-day.test/My-day-/';
+export const releaseLabel = 'My Day · ' + JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 export const original = '\uFEFF# My Day test\r\n\r\nИсходная строка.\r\n';
 const key = 'AIza' + 'p'.repeat(35);
 const bearer = 'synthetic-browser-token';

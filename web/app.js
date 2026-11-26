@@ -2,12 +2,12 @@ import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, 
 import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.15.0';
 import {driveError, markdownSnapshot, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.15.0';
 import {initNoteReader} from './note-reader.js?v=0.15.0';
-import {addTask, completeTask} from './complete-task.js?v=0.14.0';
-import {firstPlanAction, insertTask} from './today.js?v=0.14.0';
-import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.14.0';
-import {initTaskEntry} from './task-entry.js?v=0.14.0';
+import {addTask, completeTask} from './complete-task.js?v=0.15.0';
+import {firstPlanAction, insertTask} from './today.js?v=0.15.0';
+import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.15.0';
+import {initTaskEntry} from './task-entry.js?v=0.15.0';
 import {initNoteSearch} from './search-view.js?v=0.14.0';
-import {buildHandoffHistory} from './handoff.js?v=0.14.0';
+import {buildHandoffHistory} from './handoff.js?v=0.15.0';
 import {leaveForReload, prepareReload, resumeReload} from './reload.js?v=0.6.1';
 
 const CLIENT = '327713401108-rdi4uv2duskfvn8d368i2ui56uhqsulo.apps.googleusercontent.com';
@@ -444,7 +444,15 @@ async function readReader(id = device.readerId, selecting = false, expectedName)
     if (!valid()) return;
     if (error.access === 'expired' || error.access === 'consent') { fail(error); return; }
     applyReadError(id, error);
-    reader.clear(errorMessage(error), true);
+    const previous = sourcesFor(device).get(device.readerId);
+    const failedSelection = selecting && id !== device.readerId;
+    let message = errorMessage(error);
+    if (failedSelection) {
+      const label = expectedName || known?.name;
+      message = (label ? 'Не удалось открыть «' + label + '». ' : 'Не удалось открыть выбранный файл. ') + message;
+      if (previous) message += ' В списке осталась «' + previous.name + '». Нажми «Обновить заметку», чтобы прочитать её.';
+    }
+    reader.clear(message, true);
     $('reader-select').value = device.readerId ?? '';
   } finally {
     if (valid()) readerAttempt = null;
