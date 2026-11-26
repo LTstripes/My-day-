@@ -31,6 +31,7 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
 #plan-select{min-height:44px}#today-plan{grid-column:1/-1}#today-plan-source{overflow-wrap:anywhere;white-space:normal}
 #handoff-queue{margin-top:14px}#handoff-filter,#handoff-record{min-height:44px}#handoff-record{width:100%}#handoff-result{overflow-wrap:anywhere}
 [data-complete]{font-size:.86rem;padding:4px 10px;margin-inline-start:8px}
+#reader-content{overflow-wrap:anywhere;max-height:45vh;overflow:auto}#reader-content pre{max-height:none;margin:0}#reader-content h4{margin:.8rem 0 .2rem}#reader-content ul{padding-inline-start:1.5rem;margin:.3rem 0}.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 </style>
 <script type="module" src="./web/app.js?v=0.14.0"></script>
 </head><body><main>
@@ -102,6 +103,21 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
   <div class="actions"><button id="disconnect" class="secondary" disabled>Отключиться</button><button id="forget" class="secondary" disabled>Забыть это устройство</button></div>
 </section>
 <section id="library"><h2>Мои заметки</h2>
+  <article id="note-reader" aria-labelledby="reader-title">
+    <h3 id="reader-title">Читать заметку</h3>
+    <div id="reader-choices" hidden><label for="reader-select">Выбранные файлы</label><select id="reader-select" disabled></select></div>
+    <div class="actions"><button id="reader-pick" type="button" disabled>Выбрать Markdown</button>
+      <button id="reader-refresh" type="button" class="secondary" hidden>Обновить заметку</button></div>
+    <p id="reader-state" class="source-state meta muted" role="status"></p>
+    <div id="reader-display" hidden>
+      <label for="reader-view">Показать как…</label>
+      <select id="reader-view"><option value="text">Текст</option><option value="list">Список</option><option value="plan">План</option></select>
+      <p id="reader-notice" class="meta muted" role="status"></p>
+      <div id="reader-content" tabindex="0" aria-label="Содержимое заметки"></div>
+      <div class="source-foot"><button id="reader-full" type="button" hidden>Вся заметка</button>
+        <a id="reader-link" hidden target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>
+    </div>
+  </article>
   <details id="source-manager" hidden><summary>Источники My Day</summary>
     <label for="source-select">Источник</label><select id="source-select"></select>
     <button id="source-remove" type="button" class="secondary" disabled>Убрать из My Day</button>

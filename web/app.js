@@ -1,6 +1,7 @@
 import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, TEST_FILE, writableNote} from './core.js?v=0.14.0';
-import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.14.0';
-import {driveError, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.14.0';
+import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.15.0';
+import {driveError, markdownSnapshot, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.15.0';
+import {initNoteReader} from './note-reader.js?v=0.15.0';
 import {addTask, completeTask} from './complete-task.js?v=0.14.0';
 import {firstPlanAction, insertTask} from './today.js?v=0.14.0';
 import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.14.0';
@@ -21,6 +22,8 @@ let returnCheck = null;
 const planReads = new Map();
 const planCards = new Map();
 let resuming = false;
+const reader = initNoteReader();
+let readerAttempt = null;
 const taskEntry = initTaskEntry({edit: editTaskDraft, discard: discardTaskDraft, submit: submitTask, changed: controls});
 onTaskSourceChange(controls);
 const search = initNoteSearch({
@@ -29,16 +32,18 @@ const search = initNoteSearch({
     const current = session;
     const requestFile = sessionRequest(current, signal);
     const result = await (file.note ? snapshot(file.id, requestFile, file.name, {viewOnly: true}) :
-      planSnapshot(file.id, requestFile, file.name));
+      file.plan ? planSnapshot(file.id, requestFile, file.name) : markdownSnapshot(file.id, requestFile, file.name));
     if (signal.aborted || current !== session) return;
     if (Date.now() >= current.until) { expire(); return; }
     if (networkChanged || !navigator.onLine) throw new Error('Связь прервалась. Повтори поиск.');
     if (file.plan) showPlanResult(result);
+    reader.show(result);
     if (handoff?.fileId === file.id &&
         (handoff.version !== result.meta.version || !result.meta.capabilities?.canEdit)) setHandoff(null);
     return result;
   },
   onError(file, error) {
+    if (device.readerId === file.id) reader.clear(errorMessage(error), true);
     applyReadError(file.id, error, false, file.plan);
     return errorMessage(error);
   }
@@ -350,6 +355,7 @@ function showPlanResult(result) {
   setPlanCard(result.meta.id, {action, message, fresh: true});
 }
 function planFailed(id, error) {
+  if (error.access === 'file' && id === device.readerId) reader.clear(errorMessage(error), true);
   planReads.delete(id);
   setPlanCard(id, {message: error.access === 'file' ? planAccessMessage : errorMessage(error), error: true});
 }
@@ -372,6 +378,7 @@ async function readPlan(id = device.plan?.id, picking = false) {
       $('setup').open = false;
     }
     showPlanResult(result);
+    reader.show(result);
     search.changed(result.meta);
     return true;
   } catch (error) {
@@ -406,6 +413,43 @@ function savePlanSelection(plan, plans) {
 function readPlans(ids) {
   return Promise.all([...new Set(ids.filter(Boolean))].map(id => readPlan(id)));
 }
+async function readReader(id = device.readerId, selecting = false, expectedName) {
+  if (!id) return;
+  const current = session, attempt = {};
+  const known = sourcesFor(device).get(id);
+  readerAttempt = attempt;
+  reader.clear('Читаем заметку из Drive…');
+  const valid = () => current === session && readerAttempt === attempt &&
+    (!known || sourcesFor(device).get(id)?.name === known.name);
+  try {
+    const result = await markdownSnapshot(id, sessionRequest(current), selecting ? expectedName : known?.name);
+    if (!valid()) return;
+    if (Date.now() >= current.until) { expire(); return; }
+    if (!navigator.onLine || networkChanged) { reader.clear('Связь прервалась. Повтори чтение заметки.', true); return; }
+    if (selecting) {
+      const note = {id, name: result.meta.name};
+      const notes = [...(device.notes ?? [])];
+      const index = notes.findIndex(other => other.id === id);
+      if (index < 0) notes.push(note);
+      else notes[index] = note;
+      const previous = device;
+      device = {...device, notes, readerId: id};
+      if (!persist()) { device = previous; syncSearchFiles(); return; }
+      syncSearchFiles();
+      $('setup').open = false;
+    }
+    reader.show(result);
+    search.changed(result.meta);
+  } catch (error) {
+    if (!valid()) return;
+    if (error.access === 'expired' || error.access === 'consent') { fail(error); return; }
+    applyReadError(id, error);
+    reader.clear(errorMessage(error), true);
+    $('reader-select').value = device.readerId ?? '';
+  } finally {
+    if (valid()) readerAttempt = null;
+  }
+}
 function syncFields() {
   $('remember').checked = personal;
   $('key').value = device.pickerKey;
@@ -419,11 +463,18 @@ function sourcesFor(device) {
     // Keep note validation for a file selected in both sections under the same name.
     files.set(id, {id, name, note: files.get(id)?.name === name, plan: true});
   }
+  for (const {id, name} of device.notes ?? []) {
+    if (files.get(id)?.name !== name) files.set(id, {id, name, note: false, plan: false});
+  }
   return files;
 }
 function syncSearchFiles() {
   const files = [...sourcesFor(device).values()];
   search.setFiles(files);
+  const chosen = files.find(file => file.id === device.readerId);
+  const roleView = chosen?.note && chosen.id === preferredFile(device, TASKS) ? 'list' :
+    chosen?.plan ? 'plan' : 'text';
+  reader.setFiles(files, device.readerId, roleView);
   const select = $('source-select'), previous = select.value;
   select.replaceChildren(new Option('Выбери заметку или план', ''));
   for (const file of files) {
@@ -478,7 +529,7 @@ function captureId() {
 }
 function controls() {
   const locked = Boolean(busy || awaitingLogin || pickerWindow || resuming);
-  const editingLocked = locked && busy !== 'search' && busy !== 'return' && busy !== 'plan';
+  const editingLocked = locked && busy !== 'search' && busy !== 'return' && busy !== 'plan' && busy !== 'reader';
   const connected = Boolean(session && Date.now() < session.until);
   const draft = device.draft;
   const canWrite = writableNote(device.noteNames[device.activeId]);
@@ -491,7 +542,7 @@ function controls() {
   $('key').disabled = $('project').disabled = locked;
   $('connect').disabled = locked || !client || connected;
   $('connect').textContent = awaitingLogin ? 'Ожидаем вход в Google…' : connected ? 'Google Drive подключён' :
-    (hasConnected || device.activeId || device.plan ? 'Подключиться снова' : 'Подключить Google Drive');
+    (hasConnected || device.activeId || device.plan || device.readerId ? 'Подключиться снова' : 'Подключить Google Drive');
   $('disconnect').disabled = editingLocked || !session;
   $('forget').disabled = editingLocked;
   sourceControls();
@@ -503,6 +554,10 @@ function controls() {
   $('search-draft').disabled = editingLocked;
   $('pick').disabled = locked || !connected || !pickerReady;
   $('plan-pick').disabled = $('pick').disabled || !navigator.onLine;
+  $('reader-pick').disabled = $('plan-pick').disabled || storageFault;
+  $('reader-select').disabled = locked || !connected || !navigator.onLine || storageFault;
+  $('reader-refresh').hidden = !device.readerId;
+  $('reader-refresh').disabled = locked || !connected || !navigator.onLine;
   $('plan-refresh').disabled = locked || !connected || !device.plan || !navigator.onLine;
   $('plan-select').disabled = $('plan-refresh').disabled;
   $('plan-pin').disabled = locked || !connected || (device.pinnedPlanId !== device.plan?.id && !planCards.get(device.plan?.id)?.fresh);
@@ -535,6 +590,8 @@ function endSession() {
   clearPreview();
   clearDay();
   clearPlans();
+  readerAttempt = null;
+  reader.reset();
   search.reset();
 }
 function expire() {
@@ -648,6 +705,7 @@ async function run(action, operation = 'drive') {
 function applyReadError(id, error, report = false, planChecked = false) {
   if (error.access === 'expired' || error.access === 'consent') { fail(error); return; }
   if (error.access === 'file' || planChecked) planFailed(id, error);
+  if (error.access === 'file' && id === device.readerId) reader.clear(errorMessage(error), true);
   dayFileFailed(id, error, errorMessage(error));
   const planOnly = device.plans?.some(plan => plan.id === id) && !device.fileIds.includes(id);
   search.unavailable(id, planOnly && error.access === 'file' ? planAccessMessage : errorMessage(error));
@@ -655,6 +713,7 @@ function applyReadError(id, error, report = false, planChecked = false) {
   else if (report) status(errorMessage(error), true);
 }
 function updateSources(result) {
+  reader.show(result);
   showDayFile(result);
   search.changed(result.meta);
 }
@@ -690,7 +749,9 @@ function readActive() {
 }
 function readOnConnect() {
   status(device.activeId ? 'Читаем выбранные заметки из Drive…' : 'Google Drive подключён.');
-  return Promise.all([refreshFiles([device.activeId, ...dayIds()]), readPlans([device.plan?.id, device.pinnedPlanId])]);
+  const refreshed = [device.activeId, ...dayIds()];
+  return Promise.all([refreshFiles(refreshed), readPlans([device.plan?.id, device.pinnedPlanId]),
+    readReader()]);
 }
 function connected(response) {
   if (!awaitingLogin) return;
@@ -717,7 +778,7 @@ function startSession(token, until) {
   hasConnected = true;
   expiryTimer = setTimeout(expire, until - Date.now());
   controls();
-  if (device.activeId || device.plan) run(readOnConnect, device.activeId ? 'drive' : 'plan');
+  if (device.activeId || device.plan || device.readerId) run(readOnConnect, device.activeId ? 'drive' : 'plan');
   else if (validPickerKey($('key').value.trim())) {
     status('Google Drive подключён. Нажми «Выбрать файл», чтобы открыть заметку.');
     if (pickerReady) $('pick').focus();
@@ -848,7 +909,7 @@ for (const field of ['key', 'project']) $(field).oninput = () => {
   persist();
   controls();
 };
-function chooseFile(expectedName, forPlan = false) {
+function chooseFile(expectedName, purpose = 'note') {
   if (!session || !pickerReady || busy || awaitingLogin || pickerWindow) return;
   if (Date.now() >= session.until) { expire(); return; }
   if (!validPickerKey($('key').value.trim()) || !validProject($('project').value.trim())) {
@@ -872,7 +933,8 @@ function chooseFile(expectedName, forPlan = false) {
         if (action === google.picker.Action.CANCEL) return;
         const id = data[google.picker.Response.DOCUMENTS]?.[0]?.[google.picker.Document.ID];
         if (!validId(id)) { status('Google не вернул ID файла.', true); return; }
-        if (forPlan) { run(() => readPlan(id, true), 'plan'); return; }
+        if (purpose === 'reader') { run(() => readReader(id, true), 'reader'); return; }
+        if (purpose === 'plan') { run(() => readPlan(id, true), 'plan'); return; }
         const forDay = expectedName === NOW || expectedName === TASKS;
         if (!forDay && device.draft && device.draft.fileId !== id) {
           status('Черновик привязан к другому файлу. Выбери исходный файл или сначала очисти черновик.', true);
@@ -935,7 +997,14 @@ $('source-remove').onclick = () => {
   controls();
 };
 $('pick').onclick = () => chooseFile();
-$('plan-pick').onclick = () => chooseFile(undefined, true);
+$('reader-pick').onclick = () => chooseFile(undefined, 'reader');
+$('reader-select').onchange = () => {
+  const id = $('reader-select').value;
+  if (id) run(() => readReader(id, true, sourcesFor(device).get(id)?.name), 'reader');
+  else $('reader-select').value = device.readerId ?? '';
+};
+$('reader-refresh').onclick = () => run(() => readReader(), 'reader');
+$('plan-pick').onclick = () => chooseFile(undefined, 'plan');
 $('plan-refresh').onclick = () => run(() => readPlan(), 'plan');
 $('plan-select').onchange = () => run(async () => {
   const plan = device.plans?.find(item => item.id === $('plan-select').value);
@@ -1153,6 +1222,9 @@ function syncSelection(previous) {
     previous.noteNames[previous.activeId] !== device.noteNames[device.activeId];
   const planChanged = previous.plan?.id !== device.plan?.id || previous.pinnedPlanId !== device.pinnedPlanId ||
     JSON.stringify(previous.plans) !== JSON.stringify(device.plans);
+  const readerChanged = previous.readerId !== device.readerId ||
+    previous.notes?.find(note => note.id === device.readerId)?.name !== device.notes?.find(note => note.id === device.readerId)?.name;
+  if (readerChanged) readerAttempt = null;
   listFiles();
   if (targetChanged) clearPreview();
   const before = sourcesFor(previous), retained = sourcesFor(device);
@@ -1171,11 +1243,11 @@ function syncSelection(previous) {
   }
   const changed = dayIds().filter(id => id && !previousSources.includes(id));
   if (targetChanged && device.activeId) changed.push(device.activeId);
-  if (session && navigator.onLine && (changed.length || planChanged)) {
+  if (session && navigator.onLine && (changed.length || planChanged || readerChanged)) {
     if (busy) refreshAfterBusy = true;
     else {
       const missingPlans = [device.plan?.id, device.pinnedPlanId].filter(id => id && !planCards.get(id)?.fresh);
-      run(() => Promise.all([refreshFiles(changed), planChanged && readPlans(missingPlans)]));
+      run(() => Promise.all([refreshFiles(changed), planChanged && readPlans(missingPlans), readerChanged && readReader()]));
     }
   }
 }
@@ -1206,7 +1278,7 @@ window.addEventListener('storage', event => {
         promptNext = 'select_account';
         status('Подключение завершено в другой вкладке.');
       }
-      const writing = busy && busy !== 'search' && busy !== 'return' && busy !== 'plan';
+      const writing = busy && busy !== 'search' && busy !== 'return' && busy !== 'plan' && busy !== 'reader';
       const compatibleRemoval = removed.length && JSON.stringify(device.draft) === JSON.stringify(next.draft) &&
         JSON.stringify(device.taskDraft) === JSON.stringify(next.taskDraft);
       if ((writing && !compatibleRemoval) || storageFault) {
@@ -1256,6 +1328,8 @@ window.addEventListener('pagehide', event => {
 window.addEventListener('offline', () => {
   networkChanged = true;
   clearPlans('Нет сети. После подключения обнови план или обзор.', true);
+  readerAttempt = null;
+  if (device.readerId) reader.clear('Нет сети. После подключения обнови заметку.', true);
   controls();
   if (returnCheck) fail(new Error('Нет сети. Подключись к интернету и нажми «Обновить», чтобы проверить ответ.'));
   else setHandoff(null);
