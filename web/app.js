@@ -1,9 +1,10 @@
 import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, TEST_FILE, writableNote} from './core.js?v=0.12.0';
-import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.13.0';
+import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.14.0';
 import {driveError, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.13.0';
-import {completeTask} from './complete-task.js?v=0.13.0';
-import {firstPlanAction} from './today.js?v=0.12.0';
-import {clearDay, dayFileFailed, onTaskCompletion, setTaskActionsEnabled, showDayFile, syncDaySources, updateDayDate} from './day-view.js?v=0.12.0';
+import {addTask, completeTask} from './complete-task.js?v=0.14.0';
+import {firstPlanAction, insertTask} from './today.js?v=0.14.0';
+import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.14.0';
+import {initTaskEntry} from './task-entry.js?v=0.14.0';
 import {initNoteSearch} from './search-view.js?v=0.11.0';
 import {buildHandoffHistory} from './handoff.js?v=0.9.0';
 import {leaveForReload, prepareReload, resumeReload} from './reload.js?v=0.6.1';
@@ -20,6 +21,8 @@ let returnCheck = null;
 const planReads = new Map();
 const planCards = new Map();
 let resuming = false;
+const taskEntry = initTaskEntry({edit: editTaskDraft, discard: discardTaskDraft, submit: submitTask, changed: controls});
+onTaskSourceChange(controls);
 const search = initNoteSearch({
   run: action => run(action, 'search'),
   async read(file, signal) {
@@ -433,12 +436,13 @@ function syncSearchFiles() {
 }
 function sourceControls() {
   const id = $('source-select').value;
-  const hasDraft = id && (id === device.draft?.fileId || id === legacy?.fileId);
+  const hasDraft = id && (id === device.draft?.fileId || id === device.taskDraft?.fileId || id === legacy?.fileId);
   const locked = Boolean(busy || awaitingLogin || pickerWindow || resuming || storageFault);
   $('source-select').disabled = locked;
   $('source-remove').disabled = locked || !id || Boolean(hasDraft);
   $('source-hint').textContent = hasDraft
-    ? 'К файлу привязан черновик. Сначала сохрани мысль в Drive.'
+    ? (id === device.taskDraft?.fileId ? 'К файлу привязан черновик дела. Сохрани его или очисти.' :
+      'К файлу привязан черновик. Сначала сохрани мысль в Drive.')
     : 'Файл останется в Google Drive.';
 }
 function listFiles() {
@@ -492,7 +496,9 @@ function controls() {
   $('forget').disabled = editingLocked;
   sourceControls();
   search.setControls(connected, locked);
-  setTaskActionsEnabled(connected && !locked && !storageFault && navigator.onLine);
+  const canSendTask = connected && !locked && !storageFault && navigator.onLine;
+  setTaskActionsEnabled(canSendTask);
+  taskEntry.update(taskSource(), device.taskDraft, editingLocked, canSendTask);
   $('search-draft').hidden = !draft;
   $('search-draft').disabled = editingLocked;
   $('pick').disabled = locked || !connected || !pickerReady;
@@ -513,8 +519,8 @@ function controls() {
   $('legacy').hidden = !legacy;
   $('recover').disabled = locked || Boolean(draft);
   $('device-hint').textContent = personal ?
-    'В этом браузере сохраняются ограниченный ключ Picker, номер проекта, выбранные файлы и черновик. При F5 My Day попробует восстановить доступ. Токен Google остаётся в памяти.' :
-    'На общем компьютере оставь флажок снятым. Ключ, выбор файлов и черновик будут жить только в этой вкладке.';
+    'В этом браузере сохраняются ограниченный ключ Picker, номер проекта, выбранные файлы и черновики мыслей и дел. При F5 My Day попробует восстановить доступ. Токен Google остаётся в памяти.' :
+    'На общем компьютере оставь флажок снятым. Ключ, выбор файлов и черновики будут жить только в этой вкладке.';
   const where = personal && !storageFault ? 'Черновик сохранён на устройстве.' : 'Черновик в этой вкладке. Оставь её открытой.';
   $('draft').textContent = !draft ? 'Черновика нет.' : where + (draft.op ?
     ' Отправка начата. Повтор сначала проверит метку записи в том же файле.' : ' Запись ещё не отправлена.');
@@ -769,7 +775,7 @@ function resetTab() {
   listFiles();
 }
 $('disconnect').onclick = () => {
-  if (!personal && device.draft && !confirm('Отключиться и удалить черновик этой вкладки?')) return;
+  if (!personal && (device.draft || device.taskDraft) && !confirm('Отключиться и удалить черновики этой вкладки?')) return;
   if (personal) {
     endSession();
     promptNext = 'select_account';
@@ -800,7 +806,7 @@ $('remember').onchange = () => {
   controls();
 };
 $('forget').onclick = () => {
-  if ((device.draft || legacy) && !confirm('Забыть настройки и удалить местный черновик? Записанное в Drive сохранится.')) return;
+  if ((device.draft || device.taskDraft || legacy) && !confirm('Забыть настройки и удалить местные черновики? Записанное в Drive сохранится.')) return;
   try {
     localStorage.removeItem(LEGACY_DRAFT);
     localStorage.removeItem(DEVICE_KEY);
@@ -888,6 +894,10 @@ function chooseFile(expectedName, forPlan = false) {
           }
           if (!selectionCurrent()) return;
           const name = result.meta.name;
+          if (name === TASKS && device.taskDraft && device.taskDraft.fileId !== id) {
+            status('Черновик дела привязан к прежнему списку. Сохрани его или очисти перед сменой источника.', true);
+            return;
+          }
           if (name !== TEST_FILE) device.preferredIds[name] = id;
           if (forDay && device.activeId && device.activeId !== id) {
             rememberFile(id, name);
@@ -957,6 +967,94 @@ $('today-refresh').onclick = () => run(async () => {
     status('Обзор обновлён из Drive.');
   }
 }, 'plan');
+function editTaskDraft(text) {
+  const source = taskSource();
+  const previous = device.taskDraft;
+  const fileId = previous?.fileId ?? source?.fileId;
+  if (!fileId || previous?.op) return;
+  if (text) device.taskDraft = {fileId, text, op: null};
+  else delete device.taskDraft;
+  persist();
+  controls();
+}
+function discardTaskDraft() {
+  const previous = device.taskDraft;
+  if (!previous || !confirm('Удалить черновик дела? Уже добавленное дело останется в Drive.')) return;
+  delete device.taskDraft;
+  if (!persist()) device.taskDraft = previous;
+  else taskEntry.message();
+  controls();
+}
+function displayTaskList(result) {
+  updateSources(result);
+  if (device.activeId === result.meta.id) show(result);
+  showPlanResult(result);
+}
+function submitTask(place) {
+  // Capture the selected section before a date change can rebuild its menu.
+  const shown = taskSource();
+  updateDayDate();
+  const source = taskSource();
+  const previous = device.taskDraft;
+  if (!shown || !source || !previous || previous.fileId !== source.fileId || !session || storageFault) return;
+  if (!previous.version && shown.date !== source.date) {
+    taskEntry.message('Наступил новый день. Проверь раздел для дела и подтверди добавление.', true);
+    return;
+  }
+  run(async () => {
+    const current = session;
+    const draft = previous.version ? previous : {...previous, op: previous.op ?? crypto.randomUUID(),
+      text: previous.text.trim(), version: source.version, date: source.date, place};
+    if (!previous.version) {
+      try { insertTask(source.content, draft); }
+      catch (error) { taskEntry.message(errorMessage(error), true); return; }
+    }
+    device.taskDraft = draft;
+    if (!persist()) { device.taskDraft = previous; return; }
+    const selected = () => session === current && !storageFault && device.taskDraft?.op === draft.op &&
+      preferredFile(device, TASKS) === draft.fileId;
+    const readOrWrite = sessionRequest(current);
+    const guardedRequest = (url, options) => {
+      if (!selected()) throw new Error('Источник дела изменился. Сверь черновик с актуальным списком.');
+      if (options?.method === 'PUT') {
+        updateDayDate();
+        if (draft.date !== $('today-date').dateTime) {
+          const error = new Error('Наступил новый день. Сверь список и заново подтверди добавление.');
+          error.reselect = true;
+          throw error;
+        }
+      }
+      return readOrWrite(url, options);
+    };
+    taskEntry.message('Сверяем список с Drive…');
+    try {
+      const {verified, already} = await addTask(draft, guardedRequest);
+      if (!selected()) return;
+      displayTaskList(verified);
+      delete device.taskDraft;
+      if (!persist()) {
+        device.taskDraft = draft;
+        taskEntry.message('Drive подтвердил дело. Не удалось очистить местный черновик.', true);
+        return;
+      }
+      taskEntry.message(already ? 'Дело уже есть в Drive. Повтор подтверждён без дубля.' :
+        'Дело добавлено и подтверждено чтением из Drive.');
+    } catch (error) {
+      if (!selected()) return;
+      if (error.current) displayTaskList(error.current);
+      let message = errorMessage(error);
+      if (error.reselect) {
+        device.taskDraft = {fileId: draft.fileId, text: draft.text, op: draft.op};
+        if (!persist()) device.taskDraft = draft;
+        if (previous.version) message += ' Предыдущая отправка могла пройти. Открой список в Drive и сверь текст перед новым добавлением.';
+      } else if (error.uncertain) {
+        message += ' Исход отправки неясен. При повторе My Day сначала проверит это дело в Drive.';
+      }
+      if (error.access && !error.current) applyReadError(draft.fileId, error, true);
+      taskEntry.message(message, true);
+    }
+  }, 'add-task');
+}
 onTaskCompletion(target => run(async () => {
   const current = session;
   const {fileId, date} = target;
@@ -969,21 +1067,17 @@ onTaskCompletion(target => run(async () => {
     if (!stillSelected()) throw new Error('Источник или день изменился. Выбери дело заново.');
     return readOrWrite(url, options);
   };
-  const display = result => {
-    updateSources(result);
-    if (device.activeId === fileId) show(result);
-    showPlanResult(result);
-  };
+
   status('Сверяем дело с актуальной версией в Drive…');
   try {
     const {verified, already} = await completeTask(target, guardedRequest);
     if (!stillSelected()) return;
-    display(verified);
+    displayTaskList(verified);
     status(already ? 'Drive подтвердил, что дело уже выполнено.' : 'Дело выполнено. Отметка подтверждена чтением из Drive.');
   } catch (error) {
     if (!stillSelected()) return;
     if (error.current) {
-      display(error.current);
+      displayTaskList(error.current);
       status(errorMessage(error), true);
     } else {
       applyReadError(fileId, error, true);
@@ -1049,7 +1143,7 @@ $('save').onclick = () => run(async () => {
   finishDraft(already ? 'Запись уже была в Drive. Повтор подтверждён без дубля.' : 'Записано в ' + name + ' и подтверждено повторным чтением.');
 });
 window.addEventListener('beforeunload', event => {
-  if (device.draft && (!personal || storageFault)) { event.preventDefault(); event.returnValue = true; }
+  if ((device.draft || device.taskDraft) && (!personal || storageFault)) { event.preventDefault(); event.returnValue = true; }
 });
 function syncSelection(previous) {
   const previousSources = [preferredFile(previous, NOW), preferredFile(previous, TASKS)];
@@ -1111,11 +1205,12 @@ window.addEventListener('storage', event => {
         status('Подключение завершено в другой вкладке.');
       }
       const writing = busy && busy !== 'search' && busy !== 'return' && busy !== 'plan';
-      const compatibleRemoval = removed.length && JSON.stringify(device.draft) === JSON.stringify(next.draft);
+      const compatibleRemoval = removed.length && JSON.stringify(device.draft) === JSON.stringify(next.draft) &&
+        JSON.stringify(device.taskDraft) === JSON.stringify(next.taskDraft);
       if ((writing && !compatibleRemoval) || storageFault) {
         // Keep possibly unsaved input in this tab while dropping other detached sources immediately.
         for (const id of removed) {
-          if (device.draft?.fileId !== id) device = withoutSource(device, id);
+          if (device.draft?.fileId !== id && device.taskDraft?.fileId !== id) device = withoutSource(device, id);
         }
         device = {...device, plan: next.plan, plans: next.plans, pinnedPlanId: next.pinnedPlanId};
         syncSelection(previous);

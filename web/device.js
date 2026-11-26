@@ -28,11 +28,24 @@ export function readDraft(value, legacy = false) {
   return {fileId: value.fileId, text: value.text, op: value.op};
 }
 
+function readTaskDraft(value) {
+  const draft = readDraft(value);
+  if (!draft || draft.text.length > 300 || /[\r\n]/.test(draft.text)) return null;
+  if (value.version != null) {
+    if (!draft.op || typeof value.version !== 'string' || !/^\d+$/.test(value.version) ||
+        typeof value.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.date) ||
+        typeof value.place !== 'string' || !value.place || value.place.length > 300) return null;
+    Object.assign(draft, {version: value.version, date: value.date, place: value.place});
+  }
+  return draft;
+}
+
 export function readDevice(raw) {
   return normalizeDevice(JSON.parse(raw));
 }
 
 export function withoutSource(device, id) {
+  if (device.taskDraft?.fileId === id) return device;
   return normalizeDevice({...device,
     fileIds: device.fileIds.filter(fileId => fileId !== id),
     plans: device.plans?.filter(plan => plan.id !== id),
@@ -73,6 +86,12 @@ function normalizeDevice(saved) {
   for (const name of [NOW, TASKS, INBOX]) {
     const id = saved.preferredIds?.[name];
     if (validId(id) && device.noteNames[id] === name) device.preferredIds[name] = id;
+  }
+  if (saved.taskDraft != null) {
+    const taskDraft = readTaskDraft(saved.taskDraft);
+    if (!taskDraft || device.noteNames[taskDraft.fileId] !== TASKS) throw new Error('Не удалось восстановить черновик дела.');
+    device.taskDraft = taskDraft;
+    device.preferredIds[TASKS] = taskDraft.fileId;
   }
   device.activeId = device.draft?.fileId ?? (device.fileIds.includes(saved.activeId) ? saved.activeId : device.fileIds[0] ?? null);
   return device;
