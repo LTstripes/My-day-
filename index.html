@@ -31,9 +31,9 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
 #handoff{margin-top:14px}
 #handoff-record{width:100%;min-height:44px}#handoff-result{overflow-wrap:anywhere}
 </style>
-<script type="module" src="./web/app.js?v=0.7.0"></script>
+<script type="module" src="./web/app.js?v=0.7.1"></script>
 </head><body><main>
-<header class="masthead"><div><small>My Day · 0.7.0</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a><a href="./prototype/">Макет</a></nav></header>
+<header class="masthead"><div><small>My Day · 0.7.1</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a><a href="./prototype/">Макет</a></nav></header>
 <div class="connection-bar"><div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div><button id="connect" disabled>Подключить Google Drive</button></div>
 <section id="today" aria-labelledby="today-title">
   <div class="day-head"><div><h2 id="today-title">Сегодня</h2><p class="muted"><time id="today-date"></time> · <span id="today-zone"></span></p></div>
@@ -104,7 +104,7 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
     <label for="handoff-command">Команда для чата с доступом к Google Drive</label>
     <textarea id="handoff-command" rows="6" readonly spellcheck="false" autocomplete="off"></textarea>
     <div class="actions"><button id="handoff-copy">Скопировать команду</button></div>
-    <p>Вставь команду в чат и отправь её. После ответа вернись в «Мои заметки» и нажми «Обновить», чтобы увидеть разбор.</p>
+    <p>Отправь команду в чат с помощником. Когда вернёшься на сайт, он проверит ответ для этой мысли в Drive. Если ответ появится позже, вернись из чата ещё раз или нажми «Обновить».</p>
     <p id="handoff-status" class="meta" role="status"></p>
   </div>
 </section>

@@ -12,8 +12,9 @@ const $ = id => document.getElementById(id);
 
 let device = newDevice(), personal = false, stored = null, legacy = null, storageFault = false;
 let client = null, session = null, expiryTimer, pickerReady = false, pickerWindow = null, awaitingLogin = false, busy = false;
-let promptNext = null, hasConnected = false, readAt = '', refreshAfterSearch = false;
+let promptNext = null, hasConnected = false, readAt = '', refreshAfterBusy = false;
 let handoff = null, networkChanged = false;
+let returnCheck = null;
 let resuming = false;
 const search = initNoteSearch({
   run: action => run(action, 'search'),
@@ -71,14 +72,17 @@ function restore() {
 }
 function setHandoff(target, confirmedOp = null) {
   const priorOp = !confirmedOp && handoff?.fileId === target?.fileId ? handoff?.selectedOp : null;
+  const checking = !confirmedOp && returnCheck?.fileId === target?.fileId ? returnCheck : null;
+  const checkedRecord = checking && target.records.find(record => record.op === checking.op);
   handoff = target;
   $('handoff').hidden = !target;
   const select = $('handoff-record');
   select.replaceChildren();
-  $('handoff-choice').hidden = !target || (target.records.length === 1 && Boolean(target.defaultOp));
+  const lostRecord = checking && !checkedRecord;
+  $('handoff-choice').hidden = !target || (target.records.length === 1 && Boolean(target.defaultOp) && !lostRecord);
   if (target) {
     target.selectedOp = target.records.some(record => record.op === priorOp) ? priorOp : null;
-    if (!target.defaultOp) {
+    if (!target.defaultOp || lostRecord) {
       const placeholder = new Option('Выбери сохранённую запись', '');
       placeholder.disabled = true;
       select.add(placeholder);
@@ -87,21 +91,24 @@ function setHandoff(target, confirmedOp = null) {
       const position = index === 0 && target.defaultOp ? 'Последняя' : String(index + 1);
       select.add(new Option(position + ' · ' + record.snippet, record.op));
     });
-    select.value = target.selectedOp ?? target.defaultOp ?? '';
+    select.value = lostRecord ? '' : target.selectedOp ?? target.defaultOp ?? '';
   }
-  selectHandoffRecord();
+  if (checking?.phase === 'due') checking.phase = 'ready';
+  selectHandoffRecord(checkedRecord?.resultState === 'missing');
+  if (lostRecord) $('handoff-result-state').textContent = 'Выбранную запись больше не удаётся определить. Выбери запись из списка.';
 }
 function closeHandoffDetails() {
+  returnCheck = null;
   if (handoff) handoff.copyAttempt = null;
   $('handoff-details').hidden = true;
   $('handoff-open').setAttribute('aria-expanded', 'false');
   $('handoff-command').value = '';
   $('handoff-status').textContent = '';
 }
-function selectHandoffRecord() {
+function selectHandoffRecord(keepDetails = false) {
   const record = handoff?.records.find(record => record.op === $('handoff-record').value);
   if (handoff) handoff.record = record;
-  closeHandoffDetails();
+  if (!keepDetails) closeHandoffDetails();
   const state = record?.resultState;
   $('handoff-result').textContent = record?.result ?? '';
   $('handoff-result').hidden = !record?.result;
@@ -129,7 +136,24 @@ $('handoff-open').onclick = () => {
   $('handoff-open').setAttribute('aria-expanded', 'true');
   $('handoff-command').value = handoff.record.command;
   $('handoff-status').textContent = '';
+  handoff.selectedOp = handoff.record.op;
+  returnCheck = {fileId: handoff.fileId, op: handoff.record.op, phase: 'ready'};
 };
+function leaveHandoff() {
+  if (returnCheck && !pickerWindow) returnCheck.phase = 'away';
+}
+function returnToHandoff() {
+  if (!document.hidden && returnCheck?.phase === 'away') {
+    returnCheck.phase = 'due';
+    checkOnReturn();
+  }
+}
+function checkOnReturn() {
+  if (returnCheck?.phase !== 'due' || !handoffAvailable() || document.hidden) return;
+  const check = returnCheck;
+  check.phase = 'ready';
+  run(() => refreshFiles([check.fileId], check), 'return');
+}
 $('handoff-copy').onclick = async () => {
   if (!handoffAvailable() || !handoff.record?.command || $('handoff-details').hidden) return;
   const attempt = {};
@@ -196,7 +220,7 @@ function captureId() {
 }
 function controls() {
   const locked = Boolean(busy || awaitingLogin || pickerWindow || resuming);
-  const editingLocked = locked && busy !== 'search';
+  const editingLocked = locked && busy !== 'search' && busy !== 'return';
   const connected = Boolean(session && Date.now() < session.until);
   const draft = device.draft;
   const canWrite = writableNote(device.noteNames[device.activeId]);
@@ -237,7 +261,7 @@ function endSession() {
   if (pickerWindow) { pickerWindow.setVisible(false); pickerWindow = null; }
   session?.abort.abort();
   session = null;
-  refreshAfterSearch = false;
+  refreshAfterBusy = false;
   clearTimeout(expiryTimer);
   clearPreview();
   clearDay();
@@ -336,10 +360,10 @@ async function run(action, operation = 'drive') {
   finally {
     busy = false;
     controls();
-    if (operation === 'search' && refreshAfterSearch) {
-      refreshAfterSearch = false;
+    if (refreshAfterBusy) {
+      refreshAfterBusy = false;
       if (session && current === session) run(readOnConnect);
-    }
+    } else checkOnReturn();
   }
 }
 function applyReadError(id, error, report = false) {
@@ -353,17 +377,25 @@ function updateSources(result) {
   showDayFile(result);
   search.changed(result.meta);
 }
-async function refreshFiles(ids) {
+async function refreshFiles(ids, check = null) {
   const current = session;
   const fetchInSession = sessionRequest(current);
   await Promise.all([...new Set(ids.filter(Boolean))].map(async id => {
     try {
       const result = await snapshot(id, fetchInSession, device.noteNames[id]);
       if (session !== current) return;
+      if (check && (returnCheck !== check || device.activeId !== id)) return;
+      if (check && Date.now() >= current.until) { expire(); return; }
       updateSources(result);
-      if (device.activeId === id) showRead(result, 'Получено актуальное содержимое ' + result.meta.name + '.');
+      if (device.activeId === id) {
+        const message = 'Получено актуальное содержимое ' + result.meta.name + '.';
+        if (check) {
+          show(result);
+          status(handoff?.record ? message : 'Выбранную запись больше не удаётся определить в ' + result.meta.name + '.');
+        } else showRead(result, message);
+      }
     } catch (error) {
-      if (session === current) applyReadError(id, error);
+      if (session === current && (!check || returnCheck === check)) applyReadError(id, error);
     }
   }));
 }
@@ -679,7 +711,7 @@ window.addEventListener('storage', event => {
         promptNext = 'select_account';
         status('Подключение завершено в другой вкладке.');
       }
-      if ((busy && busy !== 'search') || storageFault) {
+      if ((busy && busy !== 'search' && busy !== 'return') || storageFault) {
         storageWarning('Личные данные изменились в другой вкладке. Проверь свой черновик и обнови страницу.');
         controls();
         return;
@@ -696,7 +728,7 @@ window.addEventListener('storage', event => {
       const changed = dayIds().filter(id => id && !previousSources.includes(id));
       if (targetChanged && device.activeId) changed.push(device.activeId);
       if (session && changed.length) {
-        if (busy === 'search') refreshAfterSearch = true;
+        if (busy) refreshAfterBusy = true;
         else run(() => refreshFiles(changed));
       }
     }
@@ -708,7 +740,11 @@ window.addEventListener('storage', event => {
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) updateDayDate();
   if (session && Date.now() >= session.until) expire();
+  if (document.hidden) leaveHandoff();
+  else returnToHandoff();
 });
+window.addEventListener('blur', leaveHandoff);
+window.addEventListener('focus', returnToHandoff);
 window.addEventListener('pageshow', event => {
   if (event.persisted) {
     endSession();
@@ -721,7 +757,11 @@ window.addEventListener('pagehide', event => {
     if (localStorage.getItem(DEVICE_KEY) === stored) leaveForReload(session, device.connectionEpoch);
   } catch { /* Browser storage may have been disabled since connection. */ }
 });
-window.addEventListener('offline', () => { networkChanged = true; setHandoff(null); });
+window.addEventListener('offline', () => {
+  networkChanged = true;
+  if (returnCheck) fail(new Error('Нет сети. Подключись к интернету и нажми «Обновить», чтобы проверить ответ.'));
+  else setHandoff(null);
+});
 
 restore();
 if (personal) prepareReload();
