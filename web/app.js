@@ -574,6 +574,7 @@ function controls() {
   $('remember').disabled = locked;
   $('key').disabled = $('project').disabled = locked;
   $('connect').disabled = locked || !client || connected;
+  $('connect').toggleAttribute('data-connected', connected);
   $('connect').textContent = awaitingLogin ? 'Ожидаем вход в Google…' : connected ? 'Google Drive подключён' :
     (hasConnected || device.activeId || device.plan || device.readerId ? 'Подключиться снова' : 'Подключить Google Drive');
   $('disconnect').disabled = editingLocked || !session;

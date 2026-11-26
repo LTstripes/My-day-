@@ -32,6 +32,8 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
 #handoff-queue{margin-top:14px}#handoff-filter,#handoff-record{min-height:44px}#handoff-record{width:100%}#handoff-result{overflow-wrap:anywhere}
 [data-complete]{font-size:.86rem;padding:4px 10px;margin-inline-start:8px}
 #reader-content{overflow-wrap:anywhere;max-height:45vh;overflow:auto}#reader-content pre{max-height:none;margin:0}#reader-content h4{margin:.8rem 0 .2rem}#reader-content ul{padding-inline-start:1.5rem;margin:.3rem 0}.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.connection-bar #connect[data-connected] { color:var(--muted); background:transparent; min-height:0; padding:0 4px; font-size:.85rem; opacity:1; }
+.connection-bar #connect[data-connected]::before { content:"✓ "; }
 #today .day-head { align-items:center; gap:14px; }
 #today .day-date { margin:0 0 4px; font-size:.9rem; }
 #today-capture-slot { margin-top:16px; border:1px solid var(--line); border-radius:12px; padding:14px; }
@@ -46,6 +48,7 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
 #today .source-foot { gap:4px 14px; }
 #today .source-foot a, #today .source-foot button { display:inline-flex; align-items:center; min-height:44px; }
 #library-capture-back { align-self:start; justify-self:start; }
+#today-capture-slot #capture label { margin-top:4px; }
 footer { margin-top:20px; font-size:.85rem; }
 @media(max-width:680px) {
   #today .day-grid { margin-top:14px; }

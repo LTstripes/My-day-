@@ -145,6 +145,7 @@ export function updateDayDate() {
     timeZone = zone;
     const date = document.getElementById('today-date');
     date.dateTime = iso;
+    date.title = zone;
     date.textContent = now.toLocaleDateString('ru-RU', {weekday: 'long', day: 'numeric', month: 'long'});
     document.getElementById('today-zone').textContent = zone;
     for (const [name, panel] of panels) render(name, panel);
