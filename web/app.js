@@ -1,9 +1,10 @@
-import {INBOX, NOW, recordBlock, TASKS, TEST_FILE, writableNote} from './core.js?v=0.4.0';
-import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject} from './device.js?v=0.4.0';
+import {INBOX, NOW, readableNote, recordBlock, TASKS, TEST_FILE, writableNote} from './core.js?v=0.6.1';
+import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject} from './device.js?v=0.6.1';
 import {driveError, saveDraft, snapshot} from './drive.js?v=0.5.0';
 import {clearDay, dayFileFailed, showDayFile, syncDaySources, updateDayDate} from './day-view.js?v=0.4.0';
-import {initNoteSearch} from './search-view.js?v=0.5.0';
+import {initNoteSearch} from './search-view.js?v=0.6.1';
 import {buildHandoff} from './handoff.js?v=0.6.0';
+import {leaveForReload, prepareReload, resumeReload} from './reload.js?v=0.6.1';
 
 const CLIENT = '327713401108-rdi4uv2duskfvn8d368i2ui56uhqsulo.apps.googleusercontent.com';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -13,6 +14,7 @@ let device = newDevice(), personal = false, stored = null, legacy = null, storag
 let client = null, session = null, expiryTimer, pickerReady = false, pickerWindow = null, awaitingLogin = false, busy = false;
 let promptNext = null, hasConnected = false, readAt = '', refreshAfterSearch = false;
 let handoff = null, networkChanged = false;
+let resuming = false;
 const search = initNoteSearch({
   run: action => run(action, 'search'),
   async read(file, signal) {
@@ -153,7 +155,7 @@ function captureId() {
   return device.noteNames[device.activeId] === INBOX ? device.activeId : preferredFile(device, INBOX);
 }
 function controls() {
-  const locked = Boolean(busy || awaitingLogin || pickerWindow);
+  const locked = Boolean(busy || awaitingLogin || pickerWindow || resuming);
   const editingLocked = locked && busy !== 'search';
   const connected = Boolean(session && Date.now() < session.until);
   const draft = device.draft;
@@ -183,7 +185,7 @@ function controls() {
   $('legacy').hidden = !legacy;
   $('recover').disabled = locked || Boolean(draft);
   $('device-hint').textContent = personal ?
-    'В этом браузере сохраняются ограниченный ключ Picker, номер проекта, выбранные файлы и черновик. Токен Google живёт только во вкладке.' :
+    'В этом браузере сохраняются ограниченный ключ Picker, номер проекта, выбранные файлы и черновик. При F5 My Day попробует восстановить доступ. Токен Google остаётся в памяти.' :
     'На общем компьютере оставь флажок снятым. Ключ, выбор файлов и черновик будут жить только в этой вкладке.';
   const where = personal && !storageFault ? 'Черновик сохранён на устройстве.' : 'Черновик в этой вкладке. Оставь её открытой.';
   $('draft').textContent = !draft ? 'Черновика нет.' : where + (draft.op ?
@@ -233,7 +235,7 @@ function show(result, confirmedOp = null) {
   const command = !networkChanged && navigator.onLine && session && Date.now() < session.until &&
     buildHandoff(result.meta.id, result.meta.name, result.content, confirmedOp);
   setHandoff(command ? {fileId: result.meta.id, version: result.meta.version, command} : null);
-  $('preview').textContent = result.content;
+  $('preview').textContent = readableNote(result.content).text;
   readAt = new Date().toLocaleString('ru-RU');
   $('fresh').textContent = 'Прочитано из Drive · ' + readAt;
   $('drive-link').href = 'https://drive.google.com/open?id=' + encodeURIComponent(result.meta.id);
@@ -349,9 +351,16 @@ function connected(response) {
   const lifetime = Number(response.expires_in) * 1000;
   if (!Number.isFinite(lifetime) || lifetime <= 0) { expire(); return; }
   const usable = lifetime - Math.min(15000, lifetime / 10);
-  session = {token: response.access_token, until: Date.now() + usable, abort: new AbortController()};
+  if (personal && !device.connectionEpoch) {
+    device.connectionEpoch = crypto.randomUUID();
+    persist();
+  }
+  startSession(response.access_token, Date.now() + usable);
+}
+function startSession(token, until) {
+  session = {token, until, abort: new AbortController()};
   hasConnected = true;
-  expiryTimer = setTimeout(expire, usable);
+  expiryTimer = setTimeout(expire, until - Date.now());
   controls();
   if (device.activeId) run(readOnConnect);
   else if (validPickerKey($('key').value.trim())) {
@@ -379,7 +388,7 @@ function initAuth() {
         'Окно входа не открылось. Разреши всплывающее окно для My Day и нажми кнопку подключения.', true);
       controls();
     }});
-  status(device.activeId ? 'Нажми «Подключиться снова», чтобы открыть ' + device.noteNames[device.activeId] + '.' :
+  if (!session && !resuming) status(device.activeId ? 'Нажми «Подключиться снова», чтобы открыть ' + device.noteNames[device.activeId] + '.' :
     'Нажми «Подключить Google Drive», затем выбери файл.');
   controls();
 }
@@ -389,7 +398,7 @@ function pickerFailed() {
 }
 $('connect').onclick = () => {
   if (session && Date.now() >= session.until) expire();
-  if (!client || busy || awaitingLogin || pickerWindow || session) return;
+  if (!client || resuming || busy || awaitingLogin || pickerWindow || session) return;
   awaitingLogin = true;
   status('Заверши вход в окне Google. После входа My Day откроет выбранную заметку.');
   controls();
@@ -410,7 +419,12 @@ function resetTab() {
 }
 $('disconnect').onclick = () => {
   if (!personal && device.draft && !confirm('Отключиться и удалить черновик этой вкладки?')) return;
-  if (personal) { endSession(); promptNext = 'select_account'; }
+  if (personal) {
+    endSession();
+    promptNext = 'select_account';
+    device.connectionEpoch = crypto.randomUUID();
+    persist();
+  }
   else resetTab();
   status(personal ? 'Отключено. Настройки и черновик доступны на этом устройстве.' : 'Отключено. Данные этого сеанса очищены.');
   controls();
@@ -418,6 +432,8 @@ $('disconnect').onclick = () => {
 $('remember').onchange = () => {
   if ($('remember').checked) {
     personal = true;
+    device.connectionEpoch = crypto.randomUUID();
+    prepareReload();
     if (!persist()) personal = false;
     else if (canRestoreLegacy()) recoverLegacy();
   } else {
@@ -614,13 +630,23 @@ window.addEventListener('storage', event => {
       resetTab();
       storageWarning();
       status('Локальные настройки удалены в другой вкладке.');
-    } else if ((busy && busy !== 'search') || storageFault) {
-      storageWarning('Личные данные изменились в другой вкладке. Проверь свой черновик и обнови страницу.');
     } else {
+      const next = readDevice(latest);
+      if (device.connectionEpoch && next.connectionEpoch !== device.connectionEpoch) {
+        endSession();
+        awaitingLogin = false;
+        promptNext = 'select_account';
+        status('Подключение завершено в другой вкладке.');
+      }
+      if ((busy && busy !== 'search') || storageFault) {
+        storageWarning('Личные данные изменились в другой вкладке. Проверь свой черновик и обнови страницу.');
+        controls();
+        return;
+      }
       const previousId = device.activeId;
       const previousName = device.noteNames[previousId];
       const previousSources = dayIds();
-      device = readDevice(latest);
+      device = next;
       stored = latest;
       syncFields();
       listFiles();
@@ -642,17 +668,47 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) updateDayDate();
   if (session && Date.now() >= session.until) expire();
 });
-window.addEventListener('pageshow', event => { if (event.persisted) location.reload(); });
+window.addEventListener('pageshow', event => {
+  if (event.persisted) {
+    endSession();
+    location.reload();
+  }
+});
+window.addEventListener('pagehide', event => {
+  if (event.persisted || !session || !personal || storageFault) return;
+  try {
+    if (localStorage.getItem(DEVICE_KEY) === stored) leaveForReload(session, device.connectionEpoch);
+  } catch { /* Browser storage may have been disabled since connection. */ }
+});
 window.addEventListener('offline', () => { networkChanged = true; setHandoff(null); });
 
 restore();
+if (personal) prepareReload();
+const epoch = device.connectionEpoch;
+const attempt = resumeReload(personal && epoch);
+if (attempt) {
+  resuming = true;
+  status('Восстанавливаем подключение к Drive…');
+  attempt.then(grant => {
+    resuming = false;
+    try {
+      if (grant?.token && grant.until > Date.now() && personal && !storageFault &&
+          device.connectionEpoch === epoch && localStorage.getItem(DEVICE_KEY) === stored) {
+        startSession(grant.token, grant.until);
+        return;
+      }
+    } catch { /* Fall back to an explicit connection. */ }
+    status('Нажми «Подключиться снова», чтобы открыть выбранные заметки.');
+    controls();
+  });
+}
 updateDayDate();
 if (personal && canRestoreLegacy()) recoverLegacy();
 syncFields();
 listFiles();
 controls();
 loadScript('https://accounts.google.com/gsi/client', initAuth, () => {
-  status('Не загрузилась библиотека входа Google. Проверь интернет и обнови страницу.', true);
+  if (!session && !resuming) status('Не загрузилась библиотека входа Google. Проверь интернет и обнови страницу.', true);
 });
 loadScript('https://apis.google.com/js/api.js', () => {
   gapi.load('picker', {callback: () => { pickerReady = true; controls(); }, onerror: pickerFailed, timeout: 15000, ontimeout: pickerFailed});

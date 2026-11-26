@@ -30,9 +30,9 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
 .search-reader .actions{align-items:center}.search-reader pre{max-height:40vh}.search-error{overflow-wrap:anywhere}
 #handoff{margin-top:14px}
 </style>
-<script type="module" src="./web/app.js?v=0.6.0"></script>
+<script type="module" src="./web/app.js?v=0.6.1"></script>
 </head><body><main>
-<header class="masthead"><div><small>My Day · 0.6.0</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a><a href="./prototype/">Макет</a></nav></header>
+<header class="masthead"><div><small>My Day · 0.6.1</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a><a href="./prototype/">Макет</a></nav></header>
 <div class="connection-bar"><div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div><button id="connect" disabled>Подключить Google Drive</button></div>
 <section id="today" aria-labelledby="today-title">
   <div class="day-head"><div><h2 id="today-title">Сегодня</h2><p class="muted"><time id="today-date"></time> · <span id="today-zone"></span></p></div>
@@ -61,7 +61,7 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
   <div id="search-results"></div>
   <article id="search-detail" class="search-reader" aria-labelledby="search-detail-title" hidden>
     <h3 id="search-detail-title" tabindex="-1"></h3><p id="search-position" class="muted meta"></p>
-    <pre id="search-text" tabindex="0" aria-label="Исходный Markdown"></pre>
+    <pre id="search-text" tabindex="0" aria-label="Текст заметки"></pre>
     <div class="actions"><button id="search-back" class="secondary" type="button">К результатам</button>
       <button id="search-draft" class="secondary" type="button" hidden>К черновику</button>
       <a id="search-drive-link" target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>
