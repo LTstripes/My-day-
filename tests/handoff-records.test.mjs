@@ -26,6 +26,31 @@ test('history orders the active file by source and links a later answer by exact
   }
 });
 
+test('body ranges locate the selected Markdown even when its text repeats and line endings differ', () => {
+  const thought = '**Одна и та же мысль** 💭';
+  const reply = 'Решение `сейчас` ✅';
+  const prefix = '\uFEFF---\r\nkey: value\r...\n' + thought + '\r\n' + reply + '\r';
+  const thoughtStart = prefix + source(a) + '\r\n  ';
+  const replyStart = thoughtStart + thought + ' \rПродолжение мысли.\n' + answer(a) + '\r\n\t \r ';
+  const content = replyStart + reply + '  \nСледующая строка ответа.\r\n## Другой раздел';
+  const {records: [record]} = buildHandoffHistory(file, name, content);
+  assert.equal(record.resultState, 'saved');
+  assert.deepEqual(record.sourceRange, {start: thoughtStart.length, end: thoughtStart.length + thought.length});
+  assert.deepEqual(record.answerRange, {start: replyStart.length, end: replyStart.length + reply.length});
+  assert.equal(content.slice(record.sourceRange.start, record.sourceRange.end), thought);
+  assert.equal(content.slice(record.answerRange.start, record.answerRange.end), reply);
+});
+
+test('a range spans visible text on the body line and excludes surrounding comments', () => {
+  const body = 'Мысль <!-- пояснение -->со ссылкой';
+  const prefix = '\uFEFF' + source(a) + '\n<!-- перед текстом -->  ';
+  const content = prefix + body + ' <!-- после текста -->\nПосторонний текст';
+  const {records: [record]} = buildHandoffHistory(file, name, content);
+  assert.equal(record.snippet, 'Мысль со ссылкой');
+  assert.deepEqual(record.sourceRange, {start: prefix.length, end: prefix.length + body.length});
+  assert.equal(record.answerRange, null);
+});
+
 test('code, metadata, quoted examples and comments do not create operations or answers', () => {
   const {records, defaultOp} = history('\uFEFF---', source(c), 'YAML', '...', '~~~md', source(c), 'Код', '~~~',
     '    ' + source(c), '> ' + source(c), '<!-- заметка', source(c), 'внутри', answer(c), '-->',
@@ -72,6 +97,7 @@ test('a duplicate, empty, malformed or preceding answer never confirms processin
     const record = history(...lines).records.find(record => record.op === a);
     assert.equal(record.resultState, 'ambiguous');
     assert.equal(record.result, null);
+    assert.equal(record.answerRange, null);
     assert.equal(record.command, null);
   }
   assert.equal(history(...basic, answer(b), 'Похожий ответ к другой записи.', 'Готово.').records[0].resultState, 'missing');
@@ -84,6 +110,19 @@ test('a code thought remains selectable and a Markdown paragraph can follow the 
     assert.equal(records.length, 1);
     assert.equal(records[0].snippet, 'Блок кода');
     assert.equal(records[0].result, 'Разбор кода.');
+  }
+});
+
+test('code thought ranges point at code and do not include fence delimiters or indentation', () => {
+  for (const leadingLines of [['~~~js', ''], []]) {
+    const prefix = [source(a), ...leadingLines, '    '].join('\r\n');
+    const line = 'const x = "📝";';
+    const tail = leadingLines.length ? '\r\nmore code\r\n~~~' : '';
+    const content = prefix + line + '  ' + tail;
+    const {records: [record]} = buildHandoffHistory(file, name, content);
+    assert.equal(record.snippet, 'Блок кода');
+    assert.deepEqual(record.sourceRange, {start: prefix.length, end: prefix.length + line.length});
+    assert.equal(record.answerRange, null);
   }
 });
 

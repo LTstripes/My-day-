@@ -11,6 +11,13 @@ function snippet(text, limit) {
   return text.slice(0, limit - 1).replace(/[\uD800-\uDBFF]$/, '') + '…';
 }
 
+function trimmedRange(text, offset) {
+  const withoutLeadingSpace = text.trimStart();
+  if (!withoutLeadingSpace) return null;
+  const start = offset + text.length - withoutLeadingSpace.length;
+  return {start, end: start + withoutLeadingSpace.trimEnd().length};
+}
+
 function scanRecords(content) {
   const sources = new Map(), answers = new Map(), occurrences = new Map();
   // The external reader receives a literal marker. Count copies even inside examples.
@@ -18,14 +25,18 @@ function scanRecords(content) {
     const key = marker.toLowerCase();
     occurrences.set(key, (occurrences.get(key) ?? 0) + 1);
   }
-  const lines = content.replace(/^\uFEFF/, '').split(/\r\n?|\n/);
+  let lineStart = content.startsWith('\uFEFF') ? 1 : 0;
+  const lines = content.slice(lineStart).split(/\r\n?|\n/);
   let frontmatter = /^---[ \t]*$/.test(lines[0]);
   let fence = '', commentDepth = 0, pending = null, latest = null;
-  let fenceSource = null, fenceHasText = false;
-  for (let i = frontmatter ? 1 : 0; i < lines.length; i++) {
+  let fenceSource = null, fenceRange = null;
+  for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    const start = lineStart;
+    const end = start + line.length;
+    lineStart = end + (content.startsWith('\r\n', end) ? 2 : 1);
     if (frontmatter) {
-      if (/^(---|\.\.\.)[ \t]*$/.test(line)) frontmatter = false;
+      if (i > 0 && /^(---|\.\.\.)[ \t]*$/.test(line)) frontmatter = false;
       continue;
     }
     const previous = pending;
@@ -37,20 +48,29 @@ function scanRecords(content) {
     const delimiter = fenceDelimiter.exec(line);
     if (fence) {
       if (delimiter && delimiter[1].startsWith(fence) && !delimiter[2].trim()) {
-        if (fenceSource && fenceHasText) fenceSource.text = 'Блок кода';
+        if (fenceSource && fenceRange) {
+          fenceSource.text = 'Блок кода';
+          fenceSource.range = fenceRange;
+        }
         fence = '';
         fenceSource = null;
-      } else if (line.trim()) fenceHasText = true;
+      } else if (fenceSource) fenceRange ??= trimmedRange(line, start);
       continue;
     }
     if (!commentDepth && delimiter && (delimiter[1][0] !== '`' || !delimiter[2].includes('`'))) {
       fence = delimiter[1];
       fenceSource = previous?.assistant ? null : previous;
-      fenceHasText = false;
+      fenceRange = null;
       continue;
     }
     if (!commentDepth && /^( {4}|\t)/.test(line)) {
-      if (previous && !previous.assistant && line.trim()) previous.text = 'Блок кода';
+      if (previous && !previous.assistant) {
+        const range = trimmedRange(line, start);
+        if (range) {
+          previous.text = 'Блок кода';
+          previous.range = range;
+        }
+      }
       continue;
     }
     const match = !commentDepth && markerCandidate.exec(line);
@@ -68,20 +88,30 @@ function scanRecords(content) {
       }
       if (exact) continue;
     }
-    let from = 0, visible = '';
+    let from = 0, visible = '', range = null;
+    const includeVisible = end => {
+      if (!previous) return;
+      const part = line.slice(from, end);
+      visible += part;
+      const partRange = trimmedRange(part, start + from);
+      if (partRange) range = {start: range?.start ?? partRange.start, end: partRange.end};
+    };
     for (const token of line.matchAll(/`[^`]*`|<!--|-->/g)) {
       if (token[0] === '<!--') {
-        if (!commentDepth) visible += line.slice(from, token.index);
+        if (!commentDepth) includeVisible(token.index);
         commentDepth++;
       } else if (token[0] === '-->' && commentDepth) {
         commentDepth--;
         if (!commentDepth) from = token.index + token[0].length;
       }
     }
-    if (!commentDepth) visible += line.slice(from);
+    if (!commentDepth) includeVisible(line.length);
     if (previous && !/<!--\s*my-day\s*:/i.test(line)) {
       const nextSection = i > previous.line + 1 && /^ {0,3}(?:#{1,6}(?:\s|$)|(?:-{3,}|\*{3,}|_{3,})\s*$)/.test(line);
-      if (!nextSection) previous.text = visible.trim();
+      if (!nextSection) {
+        previous.text = visible.trim();
+        previous.range = range;
+      }
     }
   }
   return {sources, answers, occurrences, latest};
@@ -102,6 +132,8 @@ export function buildHandoffHistory(fileId, name, content, confirmedOp = null) {
     records.push({
       op, snippet: snippet(source.text, 160), resultState,
       result: saved ? snippet(answer.text, 600) : null,
+      // Anchor the reader on the recognized body line in the original note.
+      sourceRange: source.range, answerRange: saved ? answer.range : null,
       get command() { return resultState === 'ambiguous' ? null : commandFor(fileId, op); }
     });
     if (op === latest) defaultOp = op;
