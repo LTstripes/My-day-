@@ -31,6 +31,9 @@ export function readDevice(raw) {
   const saved = JSON.parse(raw);
   if (saved?.version !== 1 || !Array.isArray(saved.fileIds)) throw new Error('Некорректные настройки My Day.');
   const device = newDevice();
+  if (typeof saved.connectionEpoch === 'string' && /^[a-f0-9-]{36}$/i.test(saved.connectionEpoch)) {
+    device.connectionEpoch = saved.connectionEpoch;
+  }
   if (validPickerKey(saved.pickerKey)) device.pickerKey = saved.pickerKey;
   if (validProject(saved.project)) device.project = saved.project;
   device.fileIds = [...new Set(saved.fileIds.filter(validId))];

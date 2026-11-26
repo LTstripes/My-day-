@@ -109,6 +109,46 @@ test('search checks only the picked files and opens the exact same-name source w
   assert.equal(state.patches, 0);
 });
 
+test('preview and search detail hide record markers while keeping the note and source positions', async t => {
+  const {open, state} = await fixture(browser, t, {viewport: {width: 360, height: 760}});
+  const id = 'decafbad-aaaa-4bbb-8ccc-123456789abc';
+  const exampleId = 'decafbad-aaaa-4bbb-8ccc-0123456789ab';
+  const sourceMarker = '<!-- my-day:' + id + ' -->';
+  const assistantMarker = '<!-- my-day:assistant:' + id + ' -->';
+  const thought = '📝 Записать мысль.';
+  const reply = '**Следующий\r\nшаг** для этой мысли.';
+  const example = '```md\r\n<!-- my-day:' + exampleId + ' -->\r\n```\r\n' +
+    'Комментарий автора: <!-- редактура -->\r\n';
+  const raw = original + sourceMarker + '\r\n' + thought + '\r\n\r\n' +
+    assistantMarker + '\r\n' + reply + '\r\n\r\n' + example;
+  const visible = original + thought + '\r\n\r\n' + reply + '\r\n\r\n' + example;
+  state.files.get('fixture-a').text = raw;
+  const page = await open();
+  await firstFile(page, true);
+  assert.equal(await page.locator('#preview').textContent(), visible);
+  await page.locator('#handoff-open').click();
+  const command = await page.locator('#handoff-command').inputValue();
+  assert(command.includes(sourceMarker) && command.includes(assistantMarker));
+
+  await search(page, 'следующий шаг');
+  const result = resultFor(page, 'fixture-a').locator('[data-hit]');
+  await result.click();
+  const detail = page.locator('#search-text');
+  assert.equal(await detail.textContent(), visible);
+  assert.equal(await detail.locator('mark').textContent(), 'Следующий\r\nшаг');
+  assert.match(await page.locator('#search-position').textContent(), /^Строка 8 ·/);
+  await page.locator('#search-back').click();
+
+  await search(page, 'my-day-test.md');
+  await resultFor(page, 'fixture-a').getByRole('button', {name: 'Открыть совпадение в названии'}).click();
+  assert.equal(await detail.textContent(), visible);
+  await page.locator('#search-back').click();
+  await search(page, id);
+  await waitText(page.locator('#search-status'), 'Совпадений нет.');
+  assert.equal(state.files.get('fixture-a').text, raw);
+  assert.equal(state.patches, 0);
+});
+
 test('fresh results show an external change and distinguish an unavailable file from no matches', async t => {
   const {open, state} = await fixture(browser, t);
   const first = state.files.get('fixture-a');

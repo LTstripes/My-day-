@@ -1,3 +1,4 @@
+import {readableNote} from './core.js?v=0.6.1';
 import {searchNote} from './search-match.js?v=0.5.0';
 
 const $ = id => document.getElementById(id);
@@ -56,12 +57,14 @@ export function initNoteSearch({run, read, onError}) {
     $('search-drive-link').href = 'https://drive.google.com/open?id=' + encodeURIComponent(row.id);
     const body = $('search-text');
     body.replaceChildren();
+    const note = readableNote(row.content);
     let marker;
     if (hit) {
-      marker = element('mark', row.content.slice(hit.start, hit.end));
-      body.append(row.content.slice(0, hit.start), marker, row.content.slice(hit.end));
+      const start = note.offset(hit.start), end = note.offset(hit.end);
+      marker = element('mark', note.text.slice(start, end));
+      body.append(note.text.slice(0, start), marker, note.text.slice(end));
     } else {
-      body.textContent = row.content;
+      body.textContent = note.text;
     }
     body.scrollTop = 0;
     $('search-detail-title').focus();

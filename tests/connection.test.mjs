@@ -17,7 +17,7 @@ test('personal device restores a not-yet-sent draft and reads the external chang
   const stored = await saved(page);
   assert.equal(stored.draft.op, null);
   assert.deepEqual(stored.fileIds, ['fixture-a']);
-  assert.deepEqual(Object.keys(stored).sort(), ['activeId', 'draft', 'fileIds', 'noteNames', 'pickerKey', 'preferredIds', 'project', 'version']);
+  assert.deepEqual(Object.keys(stored).sort(), ['activeId', 'connectionEpoch', 'draft', 'fileIds', 'noteNames', 'pickerKey', 'preferredIds', 'project', 'version']);
   assert(!JSON.stringify(stored).includes('synthetic-browser-token'));
   assert(!JSON.stringify(stored).includes('Исходная строка'));
   await page.close();

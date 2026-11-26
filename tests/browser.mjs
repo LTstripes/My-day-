@@ -1,4 +1,5 @@
 import {readFile} from 'node:fs/promises';
+import {createServer} from 'node:http';
 import assert from 'node:assert/strict';
 
 export const site = 'https://my-day.test/My-day-/';
@@ -6,7 +7,7 @@ export const original = '\uFEFF# My Day test\r\n\r\nИсходная строк�
 const key = 'AIza' + 'p'.repeat(35);
 const bearer = 'synthetic-browser-token';
 const paths = new Map(['index.html', 'web/app.js', 'web/device.js', 'web/drive.js', 'web/core.js', 'web/day-view.js',
-  'web/today.js', 'web/search-match.js', 'web/search-view.js', 'web/handoff.js', 'prototype/index.html']
+  'web/today.js', 'web/search-match.js', 'web/search-view.js', 'web/handoff.js', 'web/reload.js', 'prototype/index.html']
   .map(path => [path, new URL('../' + path, import.meta.url)]));
 
 // The real page calls the public GIS and Picker interfaces. Only these two scripts and the network are replaced.
@@ -49,13 +50,32 @@ function fakePicker() {
     Action: {CANCEL: 'cancel', PICKED: 'picked'}, Response: {ACTION: 'action', DOCUMENTS: 'docs'}, Document: {ID: 'id'}};
   window.gapi = {load: (_name, options) => options.callback()};
 }
-export async function fixture(browser, t, contextOptions = {}) {
+export async function fixture(browser, t, contextOptions = {}, liveWorker = false) {
   const ctx = await browser.newContext({locale: 'ru-RU', ...contextOptions});
+  let appUrl = site;
+  if (liveWorker) {
+    // Chromium downloads worker scripts itself, outside Playwright's page routes.
+    const script = await readFile(new URL('../reload-worker.js', import.meta.url));
+    const server = createServer(async (request, response) => {
+      const name = new URL(request.url, site).pathname.slice('/My-day-/'.length) || 'index.html';
+      if (name === 'reload-worker.js') {
+        response.writeHead(200, {'Content-Type': 'text/javascript'});
+        response.end(script);
+      } else if (paths.has(name)) {
+        response.writeHead(200, {'Content-Type': name.endsWith('.js') ? 'text/javascript' : 'text/html; charset=utf-8'});
+        response.end(await readFile(paths.get(name)));
+      } else { response.writeHead(404); response.end(); }
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    appUrl = 'http://127.0.0.1:' + server.address().port + '/My-day-/';
+    t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
+  }
   const state = {calls: [], mediaReads: [], patches: 0, files: new Map(), errors: []};
   for (const id of ['fixture-a', 'fixture-b']) state.files.set(id, {text: original, name: 'My-Day-test.md', version: 1});
   await ctx.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url());
-    if (url.origin === 'https://my-day.test') {
+    if (url.origin === new URL(appUrl).origin) {
+      if (liveWorker) return route.continue();
       let name = url.pathname.slice('/My-day-/'.length);
       if (!name || name.endsWith('/')) name += 'index.html';
       if (!paths.has(name)) return route.fulfill({status: 404});
@@ -97,7 +117,7 @@ export async function fixture(browser, t, contextOptions = {}) {
   t.after(async () => { await ctx.close(); assert.deepEqual(state.errors, []); });
   async function open() {
     const page = await ctx.newPage();
-    await page.goto(site);
+    await page.goto(appUrl);
     await page.waitForFunction(() => !document.getElementById('connect').disabled);
     return page;
   }
@@ -112,5 +132,5 @@ export async function firstFile(page, personal = false) {
   await page.locator('#pick').click();
   await notice(page, 'прочитан из Drive');
   const settings = await page.evaluate(() => [pickTest.key, pickTest.project, pickTest.origin, pickTest.token]);
-  assert.deepEqual(settings, [key, '327713401108', new URL(site).origin, bearer]);
+  assert.deepEqual(settings, [key, '327713401108', new URL(page.url()).origin, bearer]);
 }

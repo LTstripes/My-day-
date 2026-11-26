@@ -32,9 +32,11 @@ test('metadata, comments, code and completed tasks never create day headings or 
 });
 
 test('Now keeps paragraphs and meaningful later sections while hiding the file title and metadata', () => {
+  const operation = 'decafbad-aaaa-4bbb-8ccc-123456789abc';
   const markdown = [
     '\uFEFF---', 'tags: [личное]', '...', '# Now', '',
-    'Вводный абзац.', '', '<!-- my-day:example -->', '', '## Текущий фокус ##',
+    '<!-- my-day:' + operation + ' -->', 'Вводный абзац.', '',
+    '<!-- my-day:assistant:' + operation + ' -->', '## Текущий фокус ##',
     'Сделать <!-- скрытая', 'пометка -->одну вещь.', '', '## Позже', '- Другая мысль'
   ].join('\r\n');
   assert.equal(nowContext(markdown), 'Вводный абзац.\n\nТекущий фокус\nСделать\nодну вещь.\n\nПозже\n- Другая мысль');
