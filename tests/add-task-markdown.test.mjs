@@ -66,10 +66,18 @@ test('retries recognize checked or unchecked tasks across edited line endings bu
 });
 
 test('refuses unsafe markup instead of swallowing a task or leaving a dangling comment', () => {
-  for (const invalid of ['---\nkey: value\n', '## Сегодня\n~~~md\nsample', '<!-- hidden', '%% hidden']) {
+  for (const invalid of ['---\nkey: value\n', '## Сегодня\n~~~md\nsample', '<!-- hidden', '%% hidden', '<pre>\nexample']) {
     assert.throws(() => insertTask(invalid, draft), /не закрыт/);
   }
   for (const text of ['первая\n- [ ] вторая', 'скрытый <!-- текст', '%% скрыто %%', 'a'.repeat(301), marker]) {
     assert.throws(() => insertTask('', {...draft, text}));
   }
+});
+
+test('literal HTML examples cannot be task destinations or delivery receipts', () => {
+  const example = '<PRE class="markdown">\n## Сегодня\n' + marker + '\n- [ ] ' + draft.text + '\n## Завтра\n</PRE>\n';
+  assert.equal(taskDelivery(example, draft), 'conflict');
+  const source = example.replace(marker, '') + '- Пункт списка\n';
+  assert.equal(taskPlaces(source, date).defaultId, 'end');
+  assert.equal(insertTask(source, draft), source + block.replaceAll('\r\n', '\n'));
 });

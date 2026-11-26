@@ -21,6 +21,7 @@ function* contentLines(markdown, forInsertion = false) {
 
   const listIndents = [];
   let fence = '';
+  let htmlEnd = '';
   let commentEnd = '';
   for (let i = first; i < lines.length; i++) {
     let text = lines[i];
@@ -29,6 +30,14 @@ function* contentLines(markdown, forInsertion = false) {
       if (marker && marker[1].startsWith(fence) && !marker[2].trim()) fence = '';
       else yield {text, literal: true};
       continue;
+    }
+    if (!commentEnd) {
+      const rawTag = htmlEnd || /^ {0,3}<(pre|script|style|textarea)(?:[\t >]|$)/i.exec(text)?.[1].toLowerCase();
+      if (rawTag) {
+        htmlEnd = text.toLowerCase().includes('</' + rawTag + '>') ? '' : rawTag;
+        yield {text, literal: true};
+        continue;
+      }
     }
     if (!commentEnd && text.trim()) {
       const spaces = columnWidth(text.match(/^[ \t]*/)[0]);
@@ -58,7 +67,7 @@ function* contentLines(markdown, forInsertion = false) {
     if (list) listIndents.push(columnWidth(list[1] + list[2] + list[3]));
     yield {text, literal: false, lineIndex: i, taskOp};
   }
-  if (forInsertion && (fence || commentEnd)) throw new Error('В заметке не закрыт блок кода или комментарий. Проверь файл перед добавлением.');
+  if (forInsertion && (fence || htmlEnd || commentEnd)) throw new Error('В заметке не закрыт блок кода или комментарий. Проверь файл перед добавлением.');
 }
 
 function dayHeading(title, isoDate) {
