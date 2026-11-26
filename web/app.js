@@ -370,6 +370,7 @@ async function readPlan(id = device.plan?.id, picking = false) {
     }
     showPlanResult(result);
     search.changed(result.meta);
+    return true;
   } catch (error) {
     if (session !== current || planReads.get(id) !== attempt) return;
     if (error.access === 'expired' || error.access === 'consent') { fail(error); return; }
@@ -654,12 +655,12 @@ function updateSources(result) {
 async function refreshFiles(ids, check = null) {
   const current = session;
   const fetchInSession = sessionRequest(current);
-  await Promise.all([...new Set(ids.filter(Boolean))].map(async id => {
+  return Promise.all([...new Set(ids.filter(Boolean))].map(async id => {
     try {
       const result = await snapshot(id, fetchInSession, device.noteNames[id]);
       if (session !== current || !device.fileIds.includes(id)) return;
       if (check && (returnCheck !== check || device.activeId !== id)) return;
-      if (check && Date.now() >= current.until) { expire(); return; }
+      if (Date.now() >= current.until) { expire(); return; }
       updateSources(result);
       if (device.activeId === id) {
         const message = 'Получено актуальное содержимое ' + result.meta.name + '.';
@@ -668,6 +669,7 @@ async function refreshFiles(ids, check = null) {
           status(handoff?.record ? message : 'Выбранную запись больше не удаётся определить в ' + result.meta.name + '.');
         } else showRead(result, message);
       }
+      return true;
     } catch (error) {
       if (session === current && device.fileIds.includes(id) && (!check || returnCheck === check)) applyReadError(id, error);
     }
@@ -942,7 +944,19 @@ $('plan-pin').onclick = () => {
 for (const button of document.querySelectorAll('[data-day-pick]')) {
   button.onclick = () => chooseFile(button.dataset.dayPick);
 }
-$('today-refresh').onclick = () => run(() => Promise.all([refreshFiles(dayIds()), readPlans([device.pinnedPlanId])]), 'plan');
+$('today-refresh').onclick = () => run(async () => {
+  const current = session;
+  status('Обновляем обзор из Drive…');
+  const [files, plans] = await Promise.all([refreshFiles(dayIds()), readPlans([device.pinnedPlanId])]);
+  if (!current || current !== session || refreshAfterBusy || storageFault) return;
+  if (Date.now() >= current.until) { expire(); return; }
+  if ($('status').classList.contains('error')) return;
+  if (networkChanged || !navigator.onLine || [...files, ...plans].some(ok => !ok)) {
+    status('Не удалось обновить весь обзор. Проверь состояние источников ниже.', true);
+  } else {
+    status('Обзор обновлён из Drive.');
+  }
+}, 'plan');
 onTaskCompletion(target => run(async () => {
   const current = session;
   const {fileId, date} = target;

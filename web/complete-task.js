@@ -1,5 +1,5 @@
 import {TASKS} from './core.js?v=0.12.0';
-import {snapshot} from './drive.js?v=0.12.0';
+import {snapshot, SnapshotVersionChanged} from './drive.js?v=0.13.0';
 import {todayTasks} from './today.js?v=0.12.0';
 
 const FILES = 'https://www.googleapis.com/drive/v2/files/';
@@ -71,7 +71,10 @@ export async function completeTask(selection, request) {
     if (error.httpStatus === 412) throw await changed();
     throw error;
   }
-  const verified = await read();
+  const verified = await read().catch(error => {
+    if (error instanceof SnapshotVersionChanged) return read();
+    throw error;
+  });
   if (verified.content !== next.content) {
     throw selectionError(verified, 'Drive не подтвердил ожидаемое содержимое после записи. Проверь обновлённый список.');
   }

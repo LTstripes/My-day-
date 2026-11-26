@@ -5,6 +5,12 @@ const FILES = 'https://www.googleapis.com/drive/v3/files/';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files/';
 const MAX_BYTES = 500000;
 
+export class SnapshotVersionChanged extends Error {
+  constructor() {
+    super('Не удалось подтвердить версию файла. Нажми «Обновить».');
+  }
+}
+
 export function driveError(status, body, operation) {
   const err = body?.error;
   const reasons = [err?.status, ...[err?.errors, err?.details].filter(Array.isArray).flat().map(item => item?.reason)]
@@ -72,7 +78,8 @@ async function readSnapshot(id, request, expectedName, mode) {
   catch { throw new Error('Заметка должна быть сохранена в UTF-8.'); }
   const after = await metadata(id, request);
   checkFile(after, id, before.name, mode);
-  if (!before.version || before.version !== after.version) throw new Error('Не удалось подтвердить версию файла. Нажми «Обновить».');
+  if (!before.version || !after.version) throw new Error('Drive не вернул версию файла. Нажми «Обновить».');
+  if (before.version !== after.version) throw new SnapshotVersionChanged();
   if (mode !== 'plan' && after.name === TEST_FILE && !/^\uFEFF?# My Day test\r?\n/.test(content)) {
     throw new Error('Для первой проверки нужен My-Day-test.md с заголовком из тестового шаблона.');
   }
