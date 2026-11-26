@@ -49,8 +49,16 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
 #today .source-foot a, #today .source-foot button { display:inline-flex; align-items:center; min-height:44px; }
 #library-capture-back { align-self:start; justify-self:start; }
 #today-capture-slot #capture label { margin-top:4px; }
+.page-menu { margin:0; }
+.page-menu summary { display:none; }
 footer { margin-top:20px; font-size:.85rem; }
 @media(max-width:680px) {
+  .masthead { display:grid; grid-template-columns:1fr auto; align-items:start; padding-bottom:12px; }
+  .page-menu summary { display:list-item; margin-left:auto; padding:10px 0; min-height:44px; }
+  .page-menu nav { max-width:11rem; justify-content:flex-end; gap:4px 14px; }
+  .page-menu nav a { padding:6px 0; }
+  .connection-bar:has(#connect[data-connected]) { gap:2px; }
+  .connection-bar:has(#connect[data-connected]) .status:not(.error) { border:0; padding:0; font-size:.9rem; }
   #today .day-grid { margin-top:14px; }
   #today .day-head .actions { display:flex; }
   #today .day-head button { padding:8px 12px; }
@@ -58,11 +66,11 @@ footer { margin-top:20px; font-size:.85rem; }
 </style>
 <script type="module" src="./web/app.js?v=0.17.0"></script>
 </head><body><main>
-<header class="masthead"><div><small>My Day · 0.17.0</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a></nav></header>
+<header class="masthead"><div><small>My Day · 0.17.0</small><h1>Мой день</h1></div><details class="page-menu" id="page-menu" open><summary>Разделы</summary><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a></nav></details></header>
 <div class="connection-bar"><div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div><button id="connect" disabled>Подключить Google Drive</button></div>
 <section id="today" aria-labelledby="today-title">
   <div class="day-head"><div><p class="day-date muted"><time id="today-date"></time><span class="visually-hidden"> · <span id="today-zone"></span></span></p><h2 id="today-title">Сегодня</h2></div>
-    <div class="actions"><button id="today-capture" disabled>Записать мысль</button><button id="today-refresh" class="secondary" disabled>Обновить обзор</button><button id="today-handoff" class="secondary" aria-controls="handoff-queue" hidden>К помощнику</button></div>
+    <div class="actions"><button id="today-capture" aria-controls="today-capture-slot" aria-expanded="false" disabled>Записать мысль</button><button id="today-refresh" class="secondary" disabled>Обновить обзор</button><button id="today-handoff" class="secondary" aria-controls="handoff-queue" hidden>К помощнику</button></div>
   </div>
   <div id="today-capture-slot" hidden><button id="today-capture-close" class="secondary" type="button">Свернуть</button></div>
   <div class="day-grid">
