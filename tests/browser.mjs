@@ -6,7 +6,7 @@ export const original = '\uFEFF# My Day test\r\n\r\nИсходная строк�
 const key = 'AIza' + 'p'.repeat(35);
 const bearer = 'synthetic-browser-token';
 const paths = new Map(['index.html', 'web/app.js', 'web/device.js', 'web/drive.js', 'web/core.js', 'web/day-view.js',
-  'web/today.js', 'web/search-match.js', 'web/search-view.js', 'prototype/index.html']
+  'web/today.js', 'web/search-match.js', 'web/search-view.js', 'web/handoff.js', 'prototype/index.html']
   .map(path => [path, new URL('../' + path, import.meta.url)]));
 
 // The real page calls the public GIS and Picker interfaces. Only these two scripts and the network are replaced.
