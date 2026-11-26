@@ -1,12 +1,12 @@
-import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, TEST_FILE, writableNote} from './core.js?v=0.12.0';
+import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, TEST_FILE, writableNote} from './core.js?v=0.14.0';
 import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.14.0';
-import {driveError, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.13.0';
+import {driveError, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.14.0';
 import {addTask, completeTask} from './complete-task.js?v=0.14.0';
 import {firstPlanAction, insertTask} from './today.js?v=0.14.0';
 import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.14.0';
 import {initTaskEntry} from './task-entry.js?v=0.14.0';
-import {initNoteSearch} from './search-view.js?v=0.11.0';
-import {buildHandoffHistory} from './handoff.js?v=0.9.0';
+import {initNoteSearch} from './search-view.js?v=0.14.0';
+import {buildHandoffHistory} from './handoff.js?v=0.14.0';
 import {leaveForReload, prepareReload, resumeReload} from './reload.js?v=0.6.1';
 
 const CLIENT = '327713401108-rdi4uv2duskfvn8d368i2ui56uhqsulo.apps.googleusercontent.com';

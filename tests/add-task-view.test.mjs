@@ -114,3 +114,37 @@ test('a competing Drive edit wins the first submit and the draft stays available
   assert(file.text.startsWith('- До правки\n- Добавлено в Obsidian\n'));
   assert.equal(file.text.split(taskText).length, 2);
 });
+
+test('reload and reconnect confirm a pending delivery with its original id and keep the Inbox draft', async t => {
+  const {page, add, state, file} = await setup(t, '- Список\n');
+  state.loseReply = true;
+  await add.click();
+  await page.locator('#task-status').filter({hasText: 'неясен'}).waitFor();
+  const pending = (await saved(page)).taskDraft;
+  await page.reload();
+  assert.deepEqual((await saved(page)).taskDraft, pending);
+  await page.locator('#connect').click();
+  await page.locator('#task-add:enabled').click();
+  await page.locator('#task-status').filter({hasText: 'без дубля'}).waitFor();
+  assert.equal(state.patches, 1);
+  assert.equal(file.text.split(taskText).length, 2);
+  assert.equal((await saved(page)).draft.text, inboxText);
+});
+
+test('a task draft stays bound to its original file even when a namesake is picked', async t => {
+  const {page, state, add, file, field, row} = await setup(t, '- Первый список\n');
+  const other = {name: 'To Do now.md', text: '- Второй список\n', version: 1};
+  state.files.set('another-list', other);
+  await page.evaluate(() => { pickTest.id = 'another-list'; });
+  await page.locator('[data-day-pick="To Do now.md"]').click();
+  await page.locator('#status').filter({hasText: 'привязан к прежнему списку'}).waitFor();
+  await page.locator('#source-manager').evaluate(details => { details.open = true; });
+  await page.locator('#source-select').selectOption(fileId);
+  assert.equal(await page.locator('#source-remove').isDisabled(), true);
+  assert.equal(await field.inputValue(), taskText);
+  await add.click();
+  await row.waitFor();
+  assert.equal(state.patches, 1);
+  assert.equal(other.text, '- Второй список\n');
+  assert(file.text.includes(taskText));
+});

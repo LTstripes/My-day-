@@ -1,5 +1,5 @@
-import {writableNote} from './core.js?v=0.4.0';
-import {validId} from './device.js?v=0.4.0';
+import {writableNote} from './core.js?v=0.14.0';
+import {validId} from './device.js?v=0.14.0';
 
 const uuid = '[\\da-fA-F]{8}-(?:[\\da-fA-F]{4}-){3}[\\da-fA-F]{12}';
 const markerCandidate = new RegExp('^ {0,3}<!--\\s*my-day\\s*:\\s*(?:(assistant)\\b\\s*:?\\s*)?(' + uuid + ')?', 'i');

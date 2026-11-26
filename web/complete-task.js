@@ -1,4 +1,4 @@
-import {TASKS} from './core.js?v=0.12.0';
+import {TASKS} from './core.js?v=0.14.0';
 import {MAX_BYTES, snapshot, SnapshotVersionChanged} from './drive.js?v=0.14.0';
 import {insertTask, taskDelivery, todayTasks} from './today.js?v=0.14.0';
 

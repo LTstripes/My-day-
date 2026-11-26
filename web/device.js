@@ -1,4 +1,4 @@
-import {INBOX, NOW, supportedNote, TASKS, TEST_FILE} from './core.js?v=0.4.0';
+import {INBOX, NOW, supportedNote, TASKS, TEST_FILE} from './core.js?v=0.14.0';
 
 export const DEVICE_KEY = 'my-day-device-v1';
 export const LEGACY_DRAFT = 'my-day-test-draft-v1';
