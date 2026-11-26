@@ -3,7 +3,7 @@ import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraf
 import {driveError, saveDraft, snapshot} from './drive.js?v=0.5.0';
 import {clearDay, dayFileFailed, showDayFile, syncDaySources, updateDayDate} from './day-view.js?v=0.4.0';
 import {initNoteSearch} from './search-view.js?v=0.6.1';
-import {buildHandoffHistory} from './handoff.js?v=0.7.0';
+import {buildHandoffHistory} from './handoff.js?v=0.9.0';
 import {leaveForReload, prepareReload, resumeReload} from './reload.js?v=0.6.1';
 
 const CLIENT = '327713401108-rdi4uv2duskfvn8d368i2ui56uhqsulo.apps.googleusercontent.com';
@@ -141,6 +141,7 @@ function closeHandoffDetails() {
   $('handoff-status').textContent = '';
 }
 function selectHandoffRecord(keepDetails = false) {
+  closeHandoffReader();
   const record = handoff?.records.find(record => record.op === $('handoff-record').value);
   if (handoff) {
     handoff.record = record;
@@ -151,6 +152,8 @@ function selectHandoffRecord(keepDetails = false) {
   }
   if (!keepDetails) closeHandoffDetails();
   const state = record?.resultState;
+  $('handoff-show-source').hidden = !record?.sourceRange;
+  $('handoff-show-answer').hidden = state !== 'saved' || !record.answerRange;
   $('handoff-result').textContent = record?.result ?? '';
   $('handoff-result').hidden = !record?.result;
   $('handoff-result-state').textContent = state === 'saved' ? 'Ответ сохранён в Drive.' :
@@ -164,8 +167,37 @@ function handoffAvailable() {
   if (session && Date.now() >= session.until) expire();
   return handoff && session && navigator.onLine && !busy && !pickerWindow;
 }
+function closeHandoffReader() {
+  if ($('handoff-back').hidden) return;
+  $('preview').textContent = handoff?.readable.text ?? 'Обнови заметку, чтобы снова прочитать её.';
+  $('handoff-back').hidden = true;
+}
+function openHandoffReader(range) {
+  if (!handoffAvailable() || !range) return;
+  const {text, offset} = handoff.readable;
+  const start = offset(range.start), end = offset(range.end);
+  if (start >= end) return;
+  const mark = document.createElement('mark');
+  mark.textContent = text.slice(start, end);
+  mark.tabIndex = -1;
+  $('preview').replaceChildren(text.slice(0, start), mark, text.slice(end));
+  $('handoff-back').hidden = false;
+  mark.focus({preventScroll: true});
+  mark.scrollIntoView({block: 'center'});
+}
+$('handoff-show-source').onclick = () => openHandoffReader(handoff?.record?.sourceRange);
+$('handoff-show-answer').onclick = () => {
+  if (handoff?.record?.resultState === 'saved') openHandoffReader(handoff.record.answerRange);
+};
+$('handoff-back').onclick = () => {
+  if (!handoffAvailable()) return;
+  closeHandoffReader();
+  $('handoff-record').focus();
+};
 $('today-handoff').onclick = () => {
-  if (handoffAvailable()) $('handoff-filter').focus();
+  if (!handoffAvailable()) return;
+  closeHandoffReader();
+  $('handoff-filter').focus();
 };
 $('handoff-filter').onchange = () => {
   if (!handoffAvailable()) return;
@@ -288,6 +320,7 @@ function controls() {
   $('today-handoff').disabled = $('handoff-filter').disabled = locked || !connected || !handoff;
   $('handoff-record').disabled = locked || !connected || !handoff?.records.length;
   $('handoff-next').disabled = locked || !connected || !handoff?.next;
+  $('handoff-back').disabled = $('handoff-show-source').disabled = $('handoff-show-answer').disabled = locked || !connected;
   $('handoff-open').disabled = $('handoff-copy').disabled = locked || !connected || !handoff?.record?.command;
   $('remember').disabled = locked;
   $('key').disabled = $('project').disabled = locked;
@@ -364,8 +397,9 @@ function show(result, confirmedOp = null) {
     result.meta.id === device.activeId && writableNote(result.meta.name) && result.meta.capabilities?.canEdit ?
     buildHandoffHistory(result.meta.id, result.meta.name, result.content, confirmedOp) : null;
   const verified = history && (!confirmedOp || history.defaultOp === confirmedOp);
-  setHandoff(verified ? {...history, fileId: result.meta.id, version: result.meta.version} : null, confirmedOp);
-  $('preview').textContent = readableNote(result.content).text;
+  const readable = readableNote(result.content);
+  setHandoff(verified ? {...history, fileId: result.meta.id, version: result.meta.version, readable} : null, confirmedOp);
+  $('preview').textContent = readable.text;
   readAt = new Date().toLocaleString('ru-RU');
   $('fresh').textContent = 'Прочитано из Drive · ' + readAt;
   $('drive-link').href = 'https://drive.google.com/open?id=' + encodeURIComponent(result.meta.id);
