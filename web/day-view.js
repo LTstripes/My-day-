@@ -95,6 +95,7 @@ function render(name, panel) {
   if (name === TASKS && readAt && !panel.canEdit) message += ' · Только чтение';
   if (error) message = readAt ? message + '. Данные могут быть устаревшими. ' + error : error;
   state.textContent = message;
+  state.hidden = !id && !panel.ambiguous && !error;
   state.classList.toggle('error', Boolean(error));
   if (name === TASKS) onSourceChange?.();
 }

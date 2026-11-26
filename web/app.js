@@ -1,13 +1,13 @@
 import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, TEST_FILE, writableNote} from './core.js?v=0.14.0';
 import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.15.0';
-import {driveError, markdownSnapshot, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.15.0';
+import {driveError, markdownSnapshot, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.17.0';
 import {initNoteReader} from './note-reader.js?v=0.16.0';
 import {saveView} from './save-view.js?v=0.16.0';
 import {initAttention} from './attention.js?v=0.16.0';
 import {addTask, completeTask} from './complete-task.js?v=0.16.0';
 import {firstPlanAction, insertTask} from './today.js?v=0.16.0';
-import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.15.0';
-import {initTaskEntry} from './task-entry.js?v=0.15.0';
+import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.17.0';
+import {initTaskEntry} from './task-entry.js?v=0.17.0';
 import {initNoteSearch} from './search-view.js?v=0.14.0';
 import {buildHandoffHistory} from './handoff.js?v=0.15.0';
 import {leaveForReload, prepareReload, resumeReload} from './reload.js?v=0.6.1';
