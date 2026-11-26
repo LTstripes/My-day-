@@ -33,9 +33,9 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
 [data-complete]{font-size:.86rem;padding:4px 10px;margin-inline-start:8px}
 #reader-content{overflow-wrap:anywhere;max-height:45vh;overflow:auto}#reader-content pre{max-height:none;margin:0}#reader-content h4{margin:.8rem 0 .2rem}#reader-content ul{padding-inline-start:1.5rem;margin:.3rem 0}.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 </style>
-<script type="module" src="./web/app.js?v=0.15.0"></script>
+<script type="module" src="./web/app.js?v=0.16.0"></script>
 </head><body><main>
-<header class="masthead"><div><small>My Day · 0.15.0</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a><a href="./prototype/">Макет</a></nav></header>
+<header class="masthead"><div><small>My Day · 0.16.0</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a><a href="./prototype/">Макет</a></nav></header>
 <div class="connection-bar"><div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div><button id="connect" disabled>Подключить Google Drive</button></div>
 <section id="today" aria-labelledby="today-title">
   <div class="day-head"><div><h2 id="today-title">Сегодня</h2><p class="muted"><time id="today-date"></time> · <span id="today-zone"></span></p></div>
@@ -57,6 +57,7 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
       </form>
       <div class="source-foot"><button type="button" data-day-pick="To Do now.md" disabled>Выбрать To Do now.md</button><a data-open hidden target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>
     </article>
+    <article id="today-attention" class="day-card" hidden><h3>Требуют внимания</h3><ul></ul><p role="status" class="meta muted"></p></article>
     <article id="today-plan" class="day-card" hidden><div class="source-head"><h3>Ближайшее действие по плану</h3><small id="today-plan-source"></small></div>
       <p id="today-plan-action" class="day-body" hidden></p><p id="today-plan-state" class="meta muted source-state" role="status"></p>
       <div class="source-foot"><a id="today-plan-link" hidden target="_blank" rel="noopener noreferrer">Открыть план в Drive</a></div>
@@ -111,9 +112,11 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
     <p id="reader-state" class="source-state meta muted" role="status"></p>
     <div id="reader-display" hidden>
       <label for="reader-view">Показать как…</label>
-      <select id="reader-view"><option value="text">Текст</option><option value="list">Список</option><option value="plan">План</option></select>
+      <select id="reader-view"><option value="text">Текст</option><option value="list">Список</option><option value="plan">План</option><option value="chart">График</option></select>
       <p id="reader-notice" class="meta muted" role="status"></p>
       <div id="reader-content" tabindex="0" aria-label="Содержимое заметки"></div>
+      <div class="actions"><button id="reader-save" type="button" class="secondary" disabled>Сохранить вид в заметке</button></div>
+      <p id="reader-save-hint" class="meta muted"></p><p id="reader-save-status" class="meta muted" role="status"></p>
       <div class="source-foot"><button id="reader-full" type="button" hidden>Вся заметка</button>
         <a id="reader-link" hidden target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>
     </div>

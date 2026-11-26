@@ -10,7 +10,7 @@ function columnWidth(prefix) {
 }
 
 // Keep literal blocks separate so example checkboxes and headings never become real tasks.
-function* contentLines(markdown, forInsertion = false) {
+export function* contentLines(markdown, forInsertion = false) {
   const lines = markdown.replace(/^\uFEFF/, '').split(/\r\n?|\n/);
   let first = 0;
   if (/^---[ \t]*$/.test(lines[0])) {
