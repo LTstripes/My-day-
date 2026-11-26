@@ -15,12 +15,10 @@ const recordMarker = /^<!-- my-day:(?:assistant:)?[\da-fA-F]{8}-(?:[\da-fA-F]{4}
 const frontmatter = /^\uFEFF?---[ \t]*(?:\r\n|[\r\n])[\s\S]*?^(?:---|\.\.\.)[ \t]*(?:\r\n|[\r\n]|$)/m;
 const fenceDelimiter = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 
-export function readableNote(content) {
+function* recordMarkers(content) {
   const header = frontmatter.exec(content);
   const first = header?.index === 0 ? header[0].length : 0;
-  const removed = [];
-  const parts = [];
-  let from = 0, fence = '', inComment = false;
+  let fence = '', inComment = false;
 
   for (const match of content.matchAll(/^([^\r\n]+)(?:\r\n|[\r\n]|$)/gm)) {
     if (match.index < first) continue;
@@ -37,15 +35,23 @@ export function readableNote(content) {
     if (!inComment && recordMarker.test(line)) {
       const start = match.index + match[1].length - line.length;
       const end = match.index + match[0].length;
-      parts.push(content.slice(from, start));
-      removed.push({start, end});
-      from = end;
+      yield {start, end};
       continue;
     }
     for (const [token] of line.matchAll(inComment ? /<!--|-->/g : /`[^`]*`|<!--|-->/g)) {
       if (!inComment && token === '<!--') inComment = true;
       else if (inComment && token === '-->') inComment = false;
     }
+  }
+}
+
+export function readableNote(content) {
+  const removed = [...recordMarkers(content)];
+  const parts = [];
+  let from = 0;
+  for (const {start, end} of removed) {
+    parts.push(content.slice(from, start));
+    from = end;
   }
   parts.push(content.slice(from));
   return {
@@ -66,11 +72,34 @@ export function recordBlock(draft) {
   return '<!-- my-day:' + draft.op + ' -->\n' + draft.text + '\n';
 }
 
-export function appendRecord(source, draft) {
-  const block = recordBlock(draft);
-  if (source.includes(block)) return {content: source, already: true};
-  if (source.includes('<!-- my-day:' + draft.op + ' -->')) {
-    throw new Error('Метка записи найдена, но текст отличается. Черновик сохранён. Проверь файл вручную.');
+export const recordConflictMessage = 'Метка неоднозначна или текст отличается. Черновик сохранён. Проверь файл вручную.';
+
+// Compare LF/CRLF in memory. The content sent to Drive keeps its original bytes.
+export function lfText(text) {
+  return text.replaceAll('\r\n', '\n');
+}
+
+export function recordDelivery(source, draft) {
+  let position = -1;
+  const op = draft.op.toLowerCase();
+  // Also count copies in examples and malformed markers carrying the same operation ID.
+  for (const match of source.matchAll(/<!--[ \t]*my-day[ \t]*:[ \t]*([\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12})\b/gi)) {
+    if (match[1].toLowerCase() !== op) continue;
+    if (position !== -1) return 'conflict';
+    position = match.index;
   }
-  return {content: source + (source.endsWith('\n') ? '\n' : '\n\n') + block, already: false};
+  if (position === -1) return 'missing';
+  for (const {start} of recordMarkers(source)) {
+    if (start === position) {
+      return lfText(source.slice(start)).startsWith(lfText(recordBlock(draft))) ? 'delivered' : 'conflict';
+    }
+  }
+  return 'conflict';
+}
+
+export function appendRecord(source, draft) {
+  const delivery = recordDelivery(source, draft);
+  if (delivery === 'delivered') return {content: source, already: true};
+  if (delivery === 'conflict') throw new Error(recordConflictMessage);
+  return {content: source + (source.endsWith('\n') ? '\n' : '\n\n') + recordBlock(draft), already: false};
 }

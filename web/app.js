@@ -1,8 +1,9 @@
-import {INBOX, NOW, readableNote, recordBlock, TASKS, TEST_FILE, writableNote} from './core.js?v=0.6.1';
+import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, TEST_FILE, writableNote} from './core.js?v=0.12.0';
 import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject} from './device.js?v=0.11.0';
-import {driveError, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.10.0';
-import {firstPlanAction} from './today.js?v=0.10.0';
-import {clearDay, dayFileFailed, showDayFile, syncDaySources, updateDayDate} from './day-view.js?v=0.4.0';
+import {driveError, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.12.0';
+import {completeTask} from './complete-task.js?v=0.12.0';
+import {firstPlanAction} from './today.js?v=0.12.0';
+import {clearDay, dayFileFailed, onTaskCompletion, setTaskActionsEnabled, showDayFile, syncDaySources, updateDayDate} from './day-view.js?v=0.12.0';
 import {initNoteSearch} from './search-view.js?v=0.11.0';
 import {buildHandoffHistory} from './handoff.js?v=0.9.0';
 import {leaveForReload, prepareReload, resumeReload} from './reload.js?v=0.6.1';
@@ -466,6 +467,7 @@ function controls() {
   $('disconnect').disabled = editingLocked || !session;
   $('forget').disabled = editingLocked;
   search.setControls(connected, locked);
+  setTaskActionsEnabled(connected && !locked && !storageFault && navigator.onLine);
   $('search-draft').hidden = !draft;
   $('search-draft').disabled = editingLocked;
   $('pick').disabled = locked || !connected || !pickerReady;
@@ -522,7 +524,7 @@ async function request(url, options = {}) {
   const response = await fetch(url, {...options, cache: 'no-store', signal,
     headers: {...options.headers, Authorization: 'Bearer ' + current.token}});
   if (!response.ok) {
-    const operation = options.method === 'PATCH' ? 'запись' : url.includes('alt=media') ? 'чтение текста' : 'чтение сведений о файле';
+    const operation = ['PATCH', 'PUT'].includes(options.method) ? 'запись' : url.includes('alt=media') ? 'чтение текста' : 'чтение сведений о файле';
     throw driveError(response.status, await response.json().catch(() => null), operation);
   }
   return response;
@@ -560,13 +562,18 @@ function finishDraft(message) {
 function showRead(result, message) {
   const draft = device.draft;
   const pending = draft?.op && draft.fileId === result.meta.id;
-  const delivered = pending && result.content.includes(recordBlock(draft));
+  const delivery = pending && recordDelivery(result.content, draft);
+  const delivered = delivery === 'delivered';
   show(result, delivered ? draft.op : null);
   if (delivered) {
     finishDraft('Запись уже есть в ' + result.meta.name + '. Доставка подтверждена без дубля.');
     return;
   }
   if (pending) {
+    if (delivery === 'conflict') {
+      status(recordConflictMessage, true);
+      return;
+    }
     message += ' Черновик сохранён. Для отправки нажми «Проверить и повторить».';
   }
   status(message);
@@ -894,6 +901,39 @@ for (const button of document.querySelectorAll('[data-day-pick]')) {
   button.onclick = () => chooseFile(button.dataset.dayPick);
 }
 $('today-refresh').onclick = () => run(() => Promise.all([refreshFiles(dayIds()), readPlans([device.pinnedPlanId])]), 'plan');
+onTaskCompletion(target => run(async () => {
+  const current = session;
+  const {fileId, date} = target;
+  updateDayDate();
+  const stillSelected = () => current === session && preferredFile(device, TASKS) === fileId &&
+    $('today-date').dateTime === date && !storageFault;
+  if (!current || !stillSelected() || !navigator.onLine) return;
+  const readOrWrite = sessionRequest(current);
+  const guardedRequest = (url, options) => {
+    if (!stillSelected()) throw new Error('Источник или день изменился. Выбери дело заново.');
+    return readOrWrite(url, options);
+  };
+  const display = result => {
+    updateSources(result);
+    if (device.activeId === fileId) show(result);
+    showPlanResult(result);
+  };
+  status('Сверяем дело с актуальной версией в Drive…');
+  try {
+    const {verified, already} = await completeTask(target, guardedRequest);
+    if (!stillSelected()) return;
+    display(verified);
+    status(already ? 'Drive подтвердил, что дело уже выполнено.' : 'Дело выполнено. Отметка подтверждена чтением из Drive.');
+  } catch (error) {
+    if (!stillSelected()) return;
+    if (error.current) {
+      display(error.current);
+      status(errorMessage(error), true);
+    } else {
+      applyReadError(fileId, error, true);
+    }
+  }
+}, 'complete-task'));
 function focusDraft() {
   $('capture').scrollIntoView({block: 'center'});
   if (!$('thought').disabled) $('thought').focus();

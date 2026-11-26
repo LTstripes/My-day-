@@ -1,4 +1,4 @@
-import {appendRecord, recordBlock, supportedNote, TEST_FILE, writableNote} from './core.js?v=0.4.0';
+import {appendRecord, lfText, recordDelivery, supportedNote, TEST_FILE, writableNote} from './core.js?v=0.12.0';
 import {validPlanName} from './device.js?v=0.10.0';
 
 const FILES = 'https://www.googleapis.com/drive/v3/files/';
@@ -94,7 +94,8 @@ export async function saveDraft(draft, request, expectedName) {
     });
   }
   const verified = await snapshot(draft.fileId, request, expectedName);
-  if (!verified.content.includes(recordBlock(draft)) || (!next.already && !verified.content.startsWith(current.content))) {
+  if (recordDelivery(verified.content, draft) !== 'delivered' ||
+      (!next.already && !lfText(verified.content).startsWith(lfText(current.content)))) {
     throw new Error('Не удалось подтвердить исходный текст и запись. Проверь файл перед повтором.');
   }
   return {verified, already: next.already};

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {after, before, test} from 'node:test';
 import {chromium} from 'playwright-core';
 import {fixture, firstFile, notice, original, saved, site} from './browser.mjs';
-import {recordBlock} from '../web/core.js';
+import {appendRecord, recordBlock} from '../web/core.js';
 import {saveDraft} from '../web/drive.js';
 
 let browser;
@@ -43,7 +43,7 @@ test('offline and lost PATCH response keep the same operation across reload and 
   const {open, state} = await fixture(browser, t);
   const page = await open();
   await firstFile(page, true);
-  await page.locator('#thought').fill('Ровно одна мысль');
+  await page.locator('#thought').fill('Ровно одна мысль\nсо второй строкой');
   state.offline = true;
   await page.locator('#save').click();
   await notice(page, 'Проверь интернет');
@@ -58,12 +58,12 @@ test('offline and lost PATCH response keep the same operation across reload and 
   assert.deepEqual((await saved(page)).draft, pending);
   const remote = state.files.get('fixture-a');
   assert(remote.text.startsWith(original));
-  remote.text += 'Изменение после доставки\r\n';
+  remote.text = remote.text.replace(/\r?\n/g, '\r\n') + 'Изменение после доставки\r\n';
   remote.version++;
   await page.reload();
   await page.locator('#connect').click();
   await notice(page, 'без дубля');
-  assert.equal(remote.text.split(recordBlock(pending)).length - 1, 1);
+  assert.equal(remote.text.split(recordBlock(pending).replaceAll('\n', '\r\n')).length - 1, 1);
   assert(remote.text.endsWith('Изменение после доставки\r\n'));
   assert.equal(state.patches, 1);
   assert.equal((await saved(page)).draft, null);
@@ -267,6 +267,76 @@ test('changed text under an existing operation marker is not silently appended o
   await notice(page, 'текст отличается');
   assert.deepEqual((await saved(page)).draft, pending);
   assert.equal(state.patches, 1);
+});
+
+test('operation markers in Markdown examples and malformed copies require manual review', () => {
+  const draft = {op: 'decafbad-aaaa-4bbb-8ccc-123456789abc', text: 'Первая строка\nВторая строка'};
+  const block = recordBlock(draft);
+  for (const content of [
+    '~~~md\n' + block + '~~~\n', '<!-- пример\n' + block + '-->\n',
+    '---\nпример: |\n' + block + '---\n', 'цитата ' + block,
+    block + '<!-- my-day: ' + draft.op.toUpperCase() + ' -->\n',
+    block.replace('Вторая строка', 'Вторая строка с правками')
+  ]) {
+    assert.throws(() => appendRecord(content, draft), /Черновик сохранён/);
+  }
+});
+
+test('readback rejects a changed original prefix even when the delivered operation matches', async t => {
+  const {open, state} = await fixture(browser, t);
+  const page = await open();
+  await firstFile(page, true);
+  await page.locator('#thought').fill('Проверка исходного текста');
+  state.onMetadata = file => {
+    if (!state.patches) return;
+    file.text = file.text.replace('Исходная строка.', 'Внешняя замена.').replaceAll('\r\n', '\n');
+    file.version++;
+    state.onMetadata = null;
+  };
+  await page.locator('#save').click();
+  await notice(page, 'Не удалось подтвердить исходный текст');
+  assert.equal((await saved(page)).draft.text, 'Проверка исходного текста');
+  assert.equal(state.patches, 1);
+});
+
+test('readback and retry recognize only one confirmed operation after an editor changes line endings', async t => {
+  const {open, state} = await fixture(browser, t);
+  const page = await open();
+  await firstFile(page, true);
+  const file = state.files.get('fixture-a');
+  await page.locator('#thought').fill('Мысль\nс продолжением');
+  // The simulated editor runs after PATCH and before the readback snapshot.
+  state.onMetadata = () => {
+    if (!state.patches) return;
+    file.text = file.text.replaceAll('\r\n', '\n');
+    file.version++;
+    state.onMetadata = null;
+  };
+  await page.locator('#save').click();
+  await notice(page, 'подтверждено');
+  assert.equal((await saved(page)).draft, null);
+
+  await page.locator('#thought').fill('Вторая мысль\nна двух строках');
+  state.loseReply = true;
+  await page.locator('#save').click();
+  await notice(page, 'Проверь интернет');
+  const pending = (await saved(page)).draft;
+  const once = file.text.replace(/\r?\n/g, '\r\n');
+  file.text = once + '\r\n' + recordBlock(pending);
+  file.version++;
+  await page.locator('#refresh').click();
+  await notice(page, 'Метка неоднозначна');
+  await page.locator('#save').click();
+  await page.waitForFunction(() => !document.getElementById('save').disabled);
+  assert.deepEqual((await saved(page)).draft, pending);
+  assert.equal(state.patches, 2);
+  file.text = once;
+  file.version++;
+  await page.locator('#save').click();
+  await notice(page, 'без дубля');
+  assert.equal((await saved(page)).draft, null);
+  assert.equal(file.text, once);
+  assert.equal(state.patches, 2);
 });
 
 test('rejects secrets, unknown filenames and a test file without the template heading', async t => {
