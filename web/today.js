@@ -83,6 +83,35 @@ function openCheckbox(text) {
   return listPattern.exec(text)?.[4].match(/^\[ \][ \t]+(.+)$/)?.[1].trim();
 }
 
+function listItem(text, includeNumbered) {
+  const list = listPattern.exec(text);
+  const label = list?.[4].trim();
+  if (!label) return null;
+  const checkbox = /^\[([ xX])\][ \t]+(.+)$/.exec(label);
+  if (checkbox) return {kind: checkbox[1] === ' ' ? 'open' : 'done', text: checkbox[2]};
+  if ((!includeNumbered && !/^[-+*]$/.test(list[2])) || /^\[.?\](?:\s|$)/.test(label)) return null;
+  return {kind: 'bullet', text: label};
+}
+
+export function noteList(markdown) {
+  const groups = [];
+  let group = {heading: '', items: []};
+  for (const {text, literal} of contentLines(markdown)) {
+    if (literal) continue;
+    const heading = headingPattern.exec(text);
+    if (heading) {
+      group = {heading: heading[2].replace(/[ \t]+#+$/, ''), items: []};
+      continue;
+    }
+    if (/^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(text)) continue;
+    const entry = listItem(text, true);
+    if (!entry) continue;
+    if (!group.items.length) groups.push(group);
+    group.items.push(entry);
+  }
+  return groups;
+}
+
 export function firstPlanAction(markdown) {
   for (const {text, literal} of contentLines(markdown)) {
     const action = !literal && openCheckbox(text);
@@ -108,13 +137,9 @@ export function todayTasks(markdown, isoDate) {
       continue;
     }
     if (!scope || !text.trim() || /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(text)) continue;
-    const list = listPattern.exec(text);
-    const label = list?.[4].trim() ?? '';
-    const checkbox = /^\[([ xX])\][ \t]+(.+)$/.exec(label);
-    if (checkbox) {
-      scope.items.push({kind: checkbox[1] === ' ' ? 'open' : 'done', text: checkbox[2], lineIndex});
-    } else if (label && /^[-+*]$/.test(list[2]) && !/^\[.?\](?:\s|$)/.test(label)) {
-      scope.items.push({kind: 'bullet', text: label, lineIndex});
+    const entry = listItem(text, false);
+    if (entry) {
+      scope.items.push({...entry, lineIndex});
     } else {
       scope.unsupported = true;
     }
