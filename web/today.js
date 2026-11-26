@@ -19,7 +19,7 @@ function* contentLines(markdown) {
 
   const listIndents = [];
   let fence = '';
-  let inComment = false;
+  let commentEnd = '';
   for (let i = first; i < lines.length; i++) {
     let text = lines[i];
     const marker = fencePattern.exec(text);
@@ -28,7 +28,7 @@ function* contentLines(markdown) {
       else yield {text, literal: true};
       continue;
     }
-    if (!inComment && text.trim()) {
+    if (!commentEnd && text.trim()) {
       const spaces = columnWidth(text.match(/^[ \t]*/)[0]);
       while (listIndents.length && listIndents.at(-1) > spaces) listIndents.pop();
       if (spaces >= (listIndents.at(-1) ?? 0) + 4) {
@@ -40,20 +40,20 @@ function* contentLines(markdown) {
         continue;
       }
     }
-    if (inComment) {
-      const end = text.indexOf('-->');
+    if (commentEnd) {
+      const end = text.indexOf(commentEnd);
       if (end === -1) continue;
-      text = text.slice(end + 3);
-      inComment = false;
+      text = text.slice(end + commentEnd.length);
+      commentEnd = '';
     }
-    text = text.replace(/`[^`]+`|<!--.*?(-->|$)/g, (part, end) => {
+    text = text.replace(/`[^`]+`|<!--.*?(-->|$)|%%.*?(%%|$)/g, (part, htmlEnd, obsidianEnd) => {
       if (part.startsWith('`')) return part;
-      inComment = !end;
+      if (!htmlEnd && !obsidianEnd) commentEnd = part.startsWith('%%') ? '%%' : '-->';
       return '';
     });
     const list = listPattern.exec(text);
     if (list) listIndents.push(columnWidth(list[1] + list[2] + list[3]));
-    yield {text, literal: false};
+    yield {text, literal: false, lineIndex: i};
   }
 }
 
@@ -80,27 +80,33 @@ export function firstPlanAction(markdown) {
 
 export function todayTasks(markdown, isoDate) {
   const sections = [];
-  const selectedItems = [];
-  const openItems = [];
+  const day = {items: [], unsupported: false};
+  const undated = {items: [], unsupported: false};
   let selected = false;
-  let inToday = false;
-  for (const {text, literal} of contentLines(markdown)) {
+  let scope = undated;
+  for (const {text, literal, lineIndex} of contentLines(markdown)) {
     if (literal) continue;
     const heading = headingPattern.exec(text);
     if (heading) {
       sections.length = heading[1].length - 1;
       sections.push(dayHeading(heading[2], isoDate));
-      inToday = sections.includes(true) && !sections.includes(false);
-      if (inToday) selected = true;
+      scope = sections.includes(false) ? null : sections.includes(true) ? day : undated;
+      if (scope === day) selected = true;
       continue;
     }
-    const item = openCheckbox(text);
-    if (item) {
-      openItems.push(item);
-      if (inToday) selectedItems.push(item);
+    if (!scope || !text.trim() || /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(text)) continue;
+    const list = listPattern.exec(text);
+    const label = list?.[4].trim() ?? '';
+    const checkbox = /^\[([ xX])\][ \t]+(.+)$/.exec(label);
+    if (checkbox) {
+      scope.items.push({kind: checkbox[1] === ' ' ? 'open' : 'done', text: checkbox[2], lineIndex});
+    } else if (label && /^[-+*]$/.test(list[2]) && !/^\[.?\](?:\s|$)/.test(label)) {
+      scope.items.push({kind: 'bullet', text: label, lineIndex});
+    } else {
+      scope.unsupported = true;
     }
   }
-  return {items: selected ? selectedItems : openItems, selected};
+  return {...(selected ? day : undated), selected};
 }
 
 export function nowContext(markdown) {

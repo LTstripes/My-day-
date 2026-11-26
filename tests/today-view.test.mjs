@@ -28,6 +28,29 @@ async function pick(page, id, button) {
 const pickerFor = (page, name) => page.locator('[data-day-pick="' + name + '"]');
 const waitText = (card, text) => card.filter({hasText: text}).waitFor();
 
+test('Today displays ordinary bullets beside open tasks, preserves the source and explains an unrecognised format', async t => {
+  const {open, state} = await fixture(browser, t);
+  const {context, tasks} = addSources(state);
+  context.text = '# Now\n- Деталь контекста\n';
+  tasks.text = '- Проверить билеты\n* [ ] Собрать сумку\n- [x] Оплатить поездку\n\n';
+  const page = await open();
+  await firstFile(page, true);
+  const card = page.locator('#today-tasks');
+  await pick(page, 'day-context', pickerFor(page, 'Now.md'));
+  await waitText(page.locator('#today-context'), 'Деталь контекста');
+  await pick(page, 'day-tasks', pickerFor(page, 'To Do now.md'));
+  await waitText(card, 'Выполнено задач: 1');
+  assert.equal(await card.locator('li[data-kind=bullet]').textContent(), 'Проверить билеты');
+  assert.match(await card.locator('li[data-kind=open]').textContent(), /Собрать сумку/);
+  assert.doesNotMatch(await card.textContent(), /Деталь контекста|Оплатить поездку/);
+  assert.equal(await card.locator('[data-open]').getAttribute('href'), 'https://drive.google.com/open?id=day-tasks');
+  assert.match(await card.locator('[data-state]').textContent(), /Прочитано/);
+  changeText(tasks, '# To Do now\n## Сегодня\nЧто-то в свободной форме.\n');
+  await page.locator('#today-refresh').click();
+  await waitText(card, 'Формат списка не распознан');
+  assert.equal(state.patches, 0);
+});
+
 test('quick capture keeps the explicitly open Inbox when another file has the same name', async t => {
   const {open, state} = await fixture(browser, t);
   const original = '# Мысли\n';
