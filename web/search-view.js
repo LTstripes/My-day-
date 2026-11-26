@@ -18,8 +18,8 @@ export function initNoteSearch({run, read, onError}) {
 
   function hint() {
     if (!online) return 'Для поиска подключи Google Drive.';
-    if (!files.length) return 'Сначала выбери файл в разделе «Мои заметки».';
-    return 'Поиск перечитает выбранные файлы из Drive.';
+    if (!files.length) return 'Сначала выбери файл в разделе «Мои заметки» или «Планы».';
+    return 'Поиск перечитает выбранные заметки и планы из Drive.';
   }
   function controls() {
     input.disabled = !online || !files.length;
@@ -134,20 +134,26 @@ export function initNoteSearch({run, read, onError}) {
     let checked = 0;
     status.textContent = 'Читаем выбранные файлы из Drive…';
     async function check(row) {
-      try {
-        const {meta, content} = await read(row, current.controller.signal);
-        if (job !== current) return;
+      let result;
+      if (!row.error) {
+        try {
+          result = await read(row, current.controller.signal);
+        } catch (error) {
+          if (job !== current) return;
+          if (!row.error) row.error = onError(row, error);
+        }
+      }
+      if (job !== current) return;
+      if (result && !row.error) {
+        const {meta, content} = result;
         row.version = meta.version;
         row.match = searchNote(row.name, content, query);
         if (row.match.nameMatch || row.match.total) {
           row.content = content;
           row.readAt = new Date().toLocaleString('ru-RU');
         }
-      } catch (error) {
-        if (job !== current) return;
-        row.error = onError(row.id, error);
       }
-      if (job === current) status.textContent = 'Проверено файлов — ' + (++checked) + ' из ' + current.rows.length + '.';
+      status.textContent = 'Проверено файлов — ' + (++checked) + ' из ' + current.rows.length + '.';
     }
     for (let i = 0; i < current.rows.length && job === current; i += 4) {
       await Promise.all(current.rows.slice(i, i + 4).map(check));
@@ -157,14 +163,14 @@ export function initNoteSearch({run, read, onError}) {
     showResults();
   }
   function invalidate(id, message, version) {
-    if (!job?.done) return;
+    if (!job) return;
     const row = job.rows.find(file => file.id === id);
     if (!row || (version && row.version === version) || row.error === message) return;
     if (detail.dataset.fileId === id) closeDetail();
     delete row.content;
     delete row.match;
     row.error = message;
-    showResults();
+    if (job.done) showResults();
   }
   $('search-form').onsubmit = event => {
     event.preventDefault();
@@ -183,9 +189,10 @@ export function initNoteSearch({run, read, onError}) {
       if (ended) reset();
       else controls();
     },
-    setFiles(ids, names) {
-      if (ids.length === files.length && ids.every((id, i) => files[i].id === id && files[i].name === names[id])) return;
-      files = ids.map(id => ({id, name: names[id]}));
+    setFiles(next) {
+      if (next.length === files.length && next.every(({id, name, note, plan}, i) =>
+        files[i].id === id && files[i].name === name && files[i].note === note && files[i].plan === plan)) return;
+      files = next;
       reset(false);
     },
     changed(meta) { invalidate(meta.id, 'Файл обновился. Нажми «Найти» ещё раз.', meta.version); },

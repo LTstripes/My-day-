@@ -28,11 +28,12 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
 .search-link{padding:3px 0;background:transparent;color:var(--accent);text-decoration:underline}.search-id{overflow-wrap:anywhere}
 #search mark,#preview mark{color:inherit;background:#f4df94;border-radius:2px}@media(prefers-color-scheme:dark){#search mark,#preview mark{background:#65542a}}
 .search-reader .actions{align-items:center}.search-reader pre{max-height:40vh}.search-error{overflow-wrap:anywhere}
+#plan-select{min-height:44px}#today-plan{grid-column:1/-1}#today-plan-source{overflow-wrap:anywhere;white-space:normal}
 #handoff-queue{margin-top:14px}#handoff-filter,#handoff-record{min-height:44px}#handoff-record{width:100%}#handoff-result{overflow-wrap:anywhere}
 </style>
-<script type="module" src="./web/app.js?v=0.10.0"></script>
+<script type="module" src="./web/app.js?v=0.11.0"></script>
 </head><body><main>
-<header class="masthead"><div><small>My Day · 0.10.0</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a><a href="./prototype/">Макет</a></nav></header>
+<header class="masthead"><div><small>My Day · 0.11.0</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a><a href="./prototype/">Макет</a></nav></header>
 <div class="connection-bar"><div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div><button id="connect" disabled>Подключить Google Drive</button></div>
 <section id="today" aria-labelledby="today-title">
   <div class="day-head"><div><h2 id="today-title">Сегодня</h2><p class="muted"><time id="today-date"></time> · <span id="today-zone"></span></p></div>
@@ -47,18 +48,24 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
       <div data-body class="day-body"></div><p data-state class="meta muted source-state" role="status"></p>
       <div class="source-foot"><button type="button" data-day-pick="To Do now.md" disabled>Выбрать To Do now.md</button><a data-open hidden target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>
     </article>
+    <article id="today-plan" class="day-card" hidden><div class="source-head"><h3>Ближайшее действие по плану</h3><small id="today-plan-source"></small></div>
+      <p id="today-plan-action" class="day-body" hidden></p><p id="today-plan-state" class="meta muted source-state" role="status"></p>
+      <div class="source-foot"><a id="today-plan-link" hidden target="_blank" rel="noopener noreferrer">Открыть план в Drive</a></div>
+    </article>
   </div>
 </section>
 <section id="plans" aria-labelledby="plans-title">
   <div class="source-head"><h2 id="plans-title">Планы</h2><span id="plan-source" class="meta muted"></span></div>
+  <div id="plan-list" hidden><label for="plan-select">Выбранные планы</label><select id="plan-select" disabled></select></div>
   <div id="plan-next" hidden><small>Ближайшее действие</small><p id="plan-action" class="day-body" hidden></p></div>
   <p id="plan-state" class="source-state meta muted" role="status">Выбери Markdown-файл проекта или поездки.</p>
   <div class="actions"><button id="plan-pick" type="button" disabled>Выбрать план</button>
-    <button id="plan-refresh" class="secondary" type="button" disabled>Обновить план</button></div>
+    <button id="plan-refresh" class="secondary" type="button" disabled>Обновить план</button>
+    <button id="plan-pin" class="secondary" type="button" aria-pressed="false" hidden>Закрепить на сегодня</button></div>
   <div class="source-foot"><a id="plan-link" hidden target="_blank" rel="noopener noreferrer">Открыть план в Drive</a></div>
 </section>
 <section id="search" aria-labelledby="search-title">
-  <h2 id="search-title">Поиск по заметкам</h2>
+  <h2 id="search-title">Поиск по заметкам и планам</h2>
   <form id="search-form" role="search" aria-labelledby="search-title">
     <label for="search-query">Слово или фраза из текста или названия</label>
     <div class="search-bar"><input id="search-query" type="search" autocomplete="off" spellcheck="false" disabled>
@@ -69,7 +76,7 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
   <div id="search-results"></div>
   <article id="search-detail" class="search-reader" aria-labelledby="search-detail-title" hidden>
     <h3 id="search-detail-title" tabindex="-1"></h3><p id="search-position" class="muted meta"></p>
-    <pre id="search-text" tabindex="0" aria-label="Текст заметки"></pre>
+    <pre id="search-text" tabindex="0" aria-label="Текст файла"></pre>
     <div class="actions"><button id="search-back" class="secondary" type="button">К результатам</button>
       <button id="search-draft" class="secondary" type="button" hidden>К черновику</button>
       <a id="search-drive-link" target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>

@@ -37,8 +37,18 @@ export function readDevice(raw) {
   }
   if (validPickerKey(saved.pickerKey)) device.pickerKey = saved.pickerKey;
   if (validProject(saved.project)) device.project = saved.project;
+  const plans = new Map();
+  for (const plan of Array.isArray(saved.plans) ? saved.plans : []) {
+    if (validId(plan?.id) && validPlanName(plan.name)) plans.set(plan.id, {id: plan.id, name: plan.name});
+  }
+  // 0.10 stored the current plan on its own.
   if (validId(saved.plan?.id) && validPlanName(saved.plan.name)) {
-    device.plan = {id: saved.plan.id, name: saved.plan.name};
+    plans.set(saved.plan.id, {id: saved.plan.id, name: saved.plan.name});
+  }
+  if (plans.size) {
+    device.plans = [...plans.values()];
+    device.plan = plans.get(saved.plan?.id) ?? device.plans[0];
+    if (plans.has(saved.pinnedPlanId)) device.pinnedPlanId = saved.pinnedPlanId;
   }
   device.fileIds = [...new Set(saved.fileIds.filter(validId))];
   device.draft = readDraft(saved.draft);
