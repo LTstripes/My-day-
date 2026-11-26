@@ -28,16 +28,15 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
 .search-link{padding:3px 0;background:transparent;color:var(--accent);text-decoration:underline}.search-id{overflow-wrap:anywhere}
 #search mark{color:inherit;background:#f4df94;border-radius:2px}@media(prefers-color-scheme:dark){#search mark{background:#65542a}}
 .search-reader .actions{align-items:center}.search-reader pre{max-height:40vh}.search-error{overflow-wrap:anywhere}
-#handoff{margin-top:14px}
-#handoff-record{width:100%;min-height:44px}#handoff-result{overflow-wrap:anywhere}
+#handoff-queue{margin-top:14px}#handoff-filter,#handoff-record{min-height:44px}#handoff-record{width:100%}#handoff-result{overflow-wrap:anywhere}
 </style>
-<script type="module" src="./web/app.js?v=0.7.1"></script>
+<script type="module" src="./web/app.js?v=0.8.0"></script>
 </head><body><main>
-<header class="masthead"><div><small>My Day · 0.7.1</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a><a href="./prototype/">Макет</a></nav></header>
+<header class="masthead"><div><small>My Day · 0.8.0</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a><a href="./prototype/">Макет</a></nav></header>
 <div class="connection-bar"><div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div><button id="connect" disabled>Подключить Google Drive</button></div>
 <section id="today" aria-labelledby="today-title">
   <div class="day-head"><div><h2 id="today-title">Сегодня</h2><p class="muted"><time id="today-date"></time> · <span id="today-zone"></span></p></div>
-    <div class="actions"><button id="today-capture" disabled>Записать мысль</button><button id="today-refresh" class="secondary" disabled>Обновить обзор</button></div>
+    <div class="actions"><button id="today-capture" disabled>Записать мысль</button><button id="today-refresh" class="secondary" disabled>Обновить обзор</button><button id="today-handoff" class="secondary" aria-controls="handoff-queue" hidden>К помощнику</button></div>
   </div>
   <div class="day-grid">
     <article id="today-context" class="day-card"><div class="source-head"><h3>Текущий фокус</h3><small>Now.md</small></div>
@@ -90,22 +89,31 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
   <section id="capture"><h2>Добавить мысль</h2><label id="target" for="thought">Текст мысли</label><textarea id="thought" autocomplete="off" maxlength="3000" disabled></textarea><div class="actions"><button id="save" disabled>Добавить в Drive</button><button id="discard" class="secondary" disabled>Очистить черновик</button></div><p id="draft" class="muted meta">Черновика нет.</p></section>
   <section><h2 id="preview-title">Содержимое файла</h2><p id="fresh" class="muted meta">Файл ещё не прочитан.</p><pre id="preview">Здесь появится текст из Drive.</pre></section>
 </div>
-<section id="handoff" aria-labelledby="handoff-title" hidden><h2 id="handoff-title">Помощник</h2>
-  <div id="handoff-choice" hidden>
+<section id="handoff-queue" aria-labelledby="handoff-title" hidden>
+  <div class="source-head"><h2 id="handoff-title">Помощник</h2><span id="handoff-source" class="meta muted"></span></div>
+  <p id="handoff-counts" class="meta" role="status"></p>
+  <label for="handoff-filter">Какие мысли показать</label>
+  <select id="handoff-filter" autocomplete="off">
+    <option value="all">Все мысли</option><option value="missing">Без ответа</option>
+    <option value="saved">С ответом</option><option value="ambiguous">Неоднозначные</option>
+  </select>
+  <p id="handoff-empty" role="status" hidden></p>
+  <div id="handoff" hidden>
     <label for="handoff-record">Сохранённая запись</label>
     <select id="handoff-record" autocomplete="off" disabled></select>
+    <div role="status">
+      <p id="handoff-result-state" class="meta muted"></p>
+      <p id="handoff-result" hidden></p>
+    </div>
+    <button id="handoff-open" class="secondary" aria-expanded="false" aria-controls="handoff-details">Разобрать последнюю запись</button>
+    <div id="handoff-details" hidden>
+      <label for="handoff-command">Команда для чата с доступом к Google Drive</label>
+      <textarea id="handoff-command" rows="6" readonly spellcheck="false" autocomplete="off"></textarea>
+      <div class="actions"><button id="handoff-copy">Скопировать команду</button></div>
+      <p>Отправь команду в чат с помощником. Когда вернёшься на сайт, он проверит ответ для этой мысли в Drive. Если ответ появится позже, вернись из чата ещё раз или нажми «Обновить».</p>
+      <p id="handoff-status" class="meta" role="status"></p>
+    </div>
   </div>
-  <div role="status">
-    <p id="handoff-result-state" class="meta muted"></p>
-    <p id="handoff-result" hidden></p>
-  </div>
-  <button id="handoff-open" class="secondary" aria-expanded="false" aria-controls="handoff-details">Разобрать последнюю запись</button>
-  <div id="handoff-details" hidden>
-    <label for="handoff-command">Команда для чата с доступом к Google Drive</label>
-    <textarea id="handoff-command" rows="6" readonly spellcheck="false" autocomplete="off"></textarea>
-    <div class="actions"><button id="handoff-copy">Скопировать команду</button></div>
-    <p>Отправь команду в чат с помощником. Когда вернёшься на сайт, он проверит ответ для этой мысли в Drive. Если ответ появится позже, вернись из чата ещё раз или нажми «Обновить».</p>
-    <p id="handoff-status" class="meta" role="status"></p>
-  </div>
+  <div class="actions"><button id="handoff-next" type="button" class="secondary" disabled>Следующая без ответа</button></div>
 </section>
 </main></body></html>

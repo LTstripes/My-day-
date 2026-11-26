@@ -71,31 +71,66 @@ function restore() {
   }
 }
 function setHandoff(target, confirmedOp = null) {
-  const priorOp = !confirmedOp && handoff?.fileId === target?.fileId ? handoff?.selectedOp : null;
+  const previous = handoff && handoff.fileId === target?.fileId ? handoff : null;
   const checking = !confirmedOp && returnCheck?.fileId === target?.fileId ? returnCheck : null;
-  const checkedRecord = checking && target.records.find(record => record.op === checking.op);
   handoff = target;
-  $('handoff').hidden = !target;
-  const select = $('handoff-record');
-  select.replaceChildren();
-  const lostRecord = checking && !checkedRecord;
-  $('handoff-choice').hidden = !target || (target.records.length === 1 && Boolean(target.defaultOp) && !lostRecord);
+  $('handoff-queue').hidden = $('today-handoff').hidden = !target;
+  const name = target && device.noteNames[target.fileId];
+  const sameName = target && device.fileIds.some(id => id !== target.fileId && device.noteNames[id] === name);
+  $('handoff-source').textContent = target ? name + (sameName ? ' · ID ' + target.fileId : '') : '';
+  $('handoff-counts').textContent = '';
+  const filter = $('handoff-filter');
+  filter.value = previous?.filter ?? 'all';
   if (target) {
-    target.selectedOp = target.records.some(record => record.op === priorOp) ? priorOp : null;
-    if (!target.defaultOp || lostRecord) {
-      const placeholder = new Option('Выбери сохранённую запись', '');
-      placeholder.disabled = true;
-      select.add(placeholder);
-    }
-    target.records.forEach((record, index) => {
-      const position = index === 0 && target.defaultOp ? 'Последняя' : String(index + 1);
-      select.add(new Option(position + ' · ' + record.snippet, record.op));
-    });
-    select.value = lostRecord ? '' : target.selectedOp ?? target.defaultOp ?? '';
+    target.selectedOp = confirmedOp ?? checking?.op ?? previous?.selectedOp ?? null;
+    const selected = target.records.find(record => record.op === target.selectedOp);
+    // Keep an explicitly chosen thought visible when its answer changes group.
+    if (selected && filter.value !== 'all' && selected.resultState !== filter.value) filter.value = 'all';
+    const counts = {missing: 0, saved: 0, ambiguous: 0};
+    for (const record of target.records) counts[record.resultState]++;
+    $('handoff-counts').textContent = 'Без ответа: ' + counts.missing + ' · С ответом: ' + counts.saved +
+      ' · Неоднозначные: ' + counts.ambiguous;
   }
   if (checking?.phase === 'due') checking.phase = 'ready';
-  selectHandoffRecord(checkedRecord?.resultState === 'missing');
-  if (lostRecord) $('handoff-result-state').textContent = 'Выбранную запись больше не удаётся определить. Выбери запись из списка.';
+  renderHandoffQueue(checking);
+}
+function renderHandoffQueue(checking = null) {
+  const select = $('handoff-record');
+  select.replaceChildren();
+  const filter = $('handoff-filter').value;
+  const records = handoff?.records ?? [];
+  const selected = records.find(record => record.op === handoff?.selectedOp);
+  const lostRecord = handoff?.selectedOp && !selected;
+  if (handoff) {
+    handoff.filter = filter;
+    for (const [index, record] of records.entries()) {
+      if (filter !== 'all' && record.resultState !== filter) continue;
+      const position = record.op === handoff.defaultOp ? 'Последняя' : String(index + 1);
+      select.add(new Option(position + ' · ' + record.snippet, record.op));
+    }
+  }
+  const hasOptions = select.options.length > 0;
+  $('handoff').hidden = !hasOptions;
+  if (hasOptions) {
+    if (lostRecord || (filter === 'all' && !handoff.defaultOp && !selected)) {
+      const placeholder = new Option('Выбери сохранённую запись', '');
+      placeholder.disabled = true;
+      select.add(placeholder, 0);
+      select.value = '';
+    } else if (selected) {
+      select.value = selected.op;
+    }
+  }
+  const empty = $('handoff-empty');
+  empty.hidden = !handoff || hasOptions;
+  empty.textContent = empty.hidden ? '' : records.length ? 'В этой группе пока нет мыслей.' :
+    'Здесь пока нет мыслей, которые можно выбрать для разбора.';
+  selectHandoffRecord(checking && selected?.op === checking.op && selected.resultState === 'missing');
+  if (lostRecord) {
+    const message = 'Выбранную запись больше не удаётся определить.';
+    if (hasOptions) $('handoff-result-state').textContent = message + ' Выбери запись из списка.';
+    else empty.textContent = message + ' ' + empty.textContent;
+  }
 }
 function closeHandoffDetails() {
   returnCheck = null;
@@ -107,7 +142,13 @@ function closeHandoffDetails() {
 }
 function selectHandoffRecord(keepDetails = false) {
   const record = handoff?.records.find(record => record.op === $('handoff-record').value);
-  if (handoff) handoff.record = record;
+  if (handoff) {
+    handoff.record = record;
+    const records = handoff.records;
+    const index = records.indexOf(record);
+    handoff.next = records.find((other, i) => i > index && other.resultState === 'missing') ??
+      records.find((other, i) => i < index && other.resultState === 'missing');
+  }
   if (!keepDetails) closeHandoffDetails();
   const state = record?.resultState;
   $('handoff-result').textContent = record?.result ?? '';
@@ -115,7 +156,7 @@ function selectHandoffRecord(keepDetails = false) {
   $('handoff-result-state').textContent = state === 'saved' ? 'Ответ сохранён в Drive.' :
     state === 'missing' ? 'Ответа в Drive пока нет.' :
     state === 'ambiguous' ? 'Ответ в Drive не удалось однозначно подтвердить.' :
-    handoff ? 'Последнюю запись нельзя однозначно определить. Выбери запись из списка.' : '';
+    handoff?.records.length ? 'Последнюю запись нельзя однозначно определить. Выбери запись из списка.' : '';
   $('handoff-open').textContent = record && record.op === handoff.defaultOp ?
     'Разобрать последнюю запись' : 'Разобрать выбранную запись';
 }
@@ -123,6 +164,26 @@ function handoffAvailable() {
   if (session && Date.now() >= session.until) expire();
   return handoff && session && navigator.onLine && !busy && !pickerWindow;
 }
+$('today-handoff').onclick = () => {
+  if (handoffAvailable()) $('handoff-filter').focus();
+};
+$('handoff-filter').onchange = () => {
+  if (!handoffAvailable()) return;
+  const filter = $('handoff-filter').value;
+  const current = handoff.record;
+  handoff.selectedOp = current && (filter === 'all' || current.resultState === filter) ? current.op : null;
+  renderHandoffQueue();
+  handoff.selectedOp = handoff.record?.op ?? null;
+  controls();
+};
+$('handoff-next').onclick = () => {
+  if (!handoffAvailable() || !handoff.next) return;
+  if (handoff.filter !== 'all') $('handoff-filter').value = 'missing';
+  handoff.selectedOp = handoff.next.op;
+  renderHandoffQueue();
+  controls();
+  $('handoff-record').focus();
+};
 $('handoff-record').onchange = () => {
   if (!handoffAvailable()) return;
   selectHandoffRecord();
@@ -224,7 +285,9 @@ function controls() {
   const connected = Boolean(session && Date.now() < session.until);
   const draft = device.draft;
   const canWrite = writableNote(device.noteNames[device.activeId]);
-  $('handoff-record').disabled = locked || !connected || !handoff;
+  $('today-handoff').disabled = $('handoff-filter').disabled = locked || !connected || !handoff;
+  $('handoff-record').disabled = locked || !connected || !handoff?.records.length;
+  $('handoff-next').disabled = locked || !connected || !handoff?.next;
   $('handoff-open').disabled = $('handoff-copy').disabled = locked || !connected || !handoff?.record?.command;
   $('remember').disabled = locked;
   $('key').disabled = $('project').disabled = locked;
@@ -297,9 +360,11 @@ function sessionRequest(current, signal) {
   };
 }
 function show(result, confirmedOp = null) {
-  const history = !networkChanged && navigator.onLine && session && Date.now() < session.until ?
+  const history = !networkChanged && navigator.onLine && session && Date.now() < session.until &&
+    result.meta.id === device.activeId && writableNote(result.meta.name) && result.meta.capabilities?.canEdit ?
     buildHandoffHistory(result.meta.id, result.meta.name, result.content, confirmedOp) : null;
-  setHandoff(history?.records.length ? {...history, fileId: result.meta.id, version: result.meta.version} : null, confirmedOp);
+  const verified = history && (!confirmedOp || history.defaultOp === confirmedOp);
+  setHandoff(verified ? {...history, fileId: result.meta.id, version: result.meta.version} : null, confirmedOp);
   $('preview').textContent = readableNote(result.content).text;
   readAt = new Date().toLocaleString('ru-RU');
   $('fresh').textContent = 'Прочитано из Drive · ' + readAt;
