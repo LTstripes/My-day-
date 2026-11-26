@@ -30,6 +30,7 @@ let readerAttempt = null;
 // A single action may read the same ID through several roles. A Drive access
 // refusal invalidates every response for that ID until a new action starts.
 const deniedFileReads = new Set();
+let readOnlyCaptureId = null;
 const taskEntry = initTaskEntry({edit: editTaskDraft, discard: discardTaskDraft, submit: submitTask, changed: controls});
 onTaskSourceChange(controls);
 const search = initNoteSearch({
@@ -290,6 +291,7 @@ $('handoff-copy').onclick = async () => {
   }
 };
 function clearPreview() {
+  placeCapture(false);
   setHandoff(null);
   readAt = '';
   $('preview').textContent = 'Здесь появится текст из Drive.';
@@ -528,6 +530,7 @@ function listFiles() {
   $('known-files').hidden = device.fileIds.length < 2;
   $('file').textContent = device.activeId ? name + ' · ID ' + device.activeId : 'Файл ещё не выбран.';
   $('capture').hidden = readOnly;
+  if (readOnly || !device.activeId) placeCapture(false);
   $('notes').classList.toggle('reading', readOnly);
   $('preview-title').textContent = name ? name + (readOnly ? ' · только чтение' : '') : 'Содержимое файла';
   $('target').textContent = name ? 'Запись в ' + name : 'Текст мысли';
@@ -659,6 +662,7 @@ function sessionRequest(current, signal) {
   };
 }
 function show(result, confirmedOp = null) {
+  if (readOnlyCaptureId === result.meta.id) return;
   const history = !networkChanged && navigator.onLine && session && Date.now() < session.until &&
     result.meta.id === device.activeId && writableNote(result.meta.name) && result.meta.capabilities?.canEdit ?
     buildHandoffHistory(result.meta.id, result.meta.name, result.content, confirmedOp) : null;
@@ -710,6 +714,8 @@ function fail(error) {
   if (error.access === 'expired' || error.access === 'consent') {
     endSession();
     if (error.access === 'consent') promptNext = 'consent';
+  } else if (error.readOnly) {
+    denyCapture(device.activeId);
   } else if (error.access === 'file') {
     planFailed(device.activeId, error);
     search.unavailable(device.activeId, errorMessage(error));
@@ -725,9 +731,10 @@ async function run(action, operation = 'drive') {
   const current = session;
   networkChanged = false;
   deniedFileReads.clear();
+  readOnlyCaptureId = null;
   busy = operation;
   controls();
-  try { await action(); }
+  try { return await action(); }
   catch (error) { if (current === session) fail(error); }
   finally {
     busy = false;
@@ -749,8 +756,16 @@ function applyReadError(id, error, report = false, planChecked = false) {
   if (device.activeId === id) fail(error);
   else if (report) status(errorMessage(error), true);
 }
+function denyCapture(id) {
+  if (id === device.activeId && writableNote(device.noteNames[id])) {
+    // Another read of this ID in the same operation can still be in flight.
+    readOnlyCaptureId = id;
+    clearPreview();
+  }
+}
 function showReaderAndAttention(result) {
   if (networkChanged || !navigator.onLine || !session || Date.now() >= session.until || deniedFileReads.has(result.meta.id)) return;
+  if (result.meta.capabilities?.canEdit === false) denyCapture(result.meta.id);
   reader.show(result);
   attention.show(result);
 }
@@ -769,6 +784,7 @@ async function refreshFiles(ids, check = null) {
       if (check && (returnCheck !== check || device.activeId !== id)) return;
       if (Date.now() >= current.until) { expire(); return; }
       updateSources(result);
+      if (readOnlyCaptureId === id) return false;
       if (device.activeId === id) {
         const message = 'Получено актуальное содержимое ' + result.meta.name + '.';
         if (check) {
@@ -1031,8 +1047,9 @@ function chooseFile(expectedName, purpose = 'note') {
           }
           updateSources(result);
           $('setup').open = false;
-        }).then(() => {
-          if (expectedName === INBOX && session === current && device.activeId === id && readAt) focusDraft();
+          return true;
+        }).then(selected => {
+          if (selected && expectedName === INBOX && session === current && device.activeId === id && readAt) openTodayCapture();
         });
       }).build();
     controls();
@@ -1253,21 +1270,47 @@ onTaskCompletion(target => run(async () => {
     }
   }
 }, 'complete-task'));
+function placeCapture(inToday) {
+  const editor = $('capture');
+  const slot = $('today-capture-slot');
+  const back = $('library-capture-back');
+  if (inToday) {
+    if (editor.parentElement !== slot) slot.prepend(editor);
+  } else if (editor.parentElement === slot) {
+    back.after(editor);
+  }
+  slot.hidden = back.hidden = !inToday;
+  $('today-capture').setAttribute('aria-expanded', String(inToday));
+}
 function focusDraft() {
   $('capture').scrollIntoView({block: 'center'});
   if (!$('thought').disabled) $('thought').focus();
   else if (!$('save').disabled) $('save').focus();
 }
+function openTodayCapture() {
+  if (session && Date.now() < session.until && readAt && !$('capture').hidden) placeCapture(true);
+  focusDraft();
+}
+$('today-capture-close').onclick = () => {
+  placeCapture(false);
+  $('today-capture').focus();
+};
+$('library-capture-back').onclick = () => {
+  placeCapture(false);
+  focusDraft();
+};
 $('search-draft').onclick = focusDraft;
 $('today-capture').onclick = async () => {
-  if (device.draft) { focusDraft(); return; }
+  if (device.draft) { openTodayCapture(); return; }
+  const current = session;
   const id = captureId();
   if (!id) { chooseFile(INBOX); return; }
   if (device.activeId !== id || !readAt) {
     selectId(id, INBOX);
-    await run(readActive);
+    const reads = await run(readActive);
+    if (!reads?.[0]) return;
   }
-  if (session && readAt && device.activeId === id) focusDraft();
+  if (current && session === current && readAt && device.activeId === id) openTodayCapture();
 };
 $('known').onchange = () => {
   if (device.draft || !device.fileIds.includes($('known').value)) return;
