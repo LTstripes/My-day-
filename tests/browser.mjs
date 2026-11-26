@@ -7,7 +7,7 @@ export const original = '\uFEFF# My Day test\r\n\r\nИсходная строк�
 const key = 'AIza' + 'p'.repeat(35);
 const bearer = 'synthetic-browser-token';
 const paths = new Map(['index.html', 'web/app.js', 'web/device.js', 'web/drive.js', 'web/core.js', 'web/day-view.js',
-  'web/today.js', 'web/search-match.js', 'web/search-view.js', 'web/handoff.js', 'web/reload.js', 'prototype/index.html']
+  'web/today.js', 'web/complete-task.js', 'web/search-match.js', 'web/search-view.js', 'web/handoff.js', 'web/reload.js', 'prototype/index.html']
   .map(path => [path, new URL('../' + path, import.meta.url)]));
 
 // The real page calls the public GIS and Picker interfaces. Only these two scripts and the network are replaced.
@@ -90,7 +90,7 @@ export async function fixture(browser, t, contextOptions = {}, liveWorker = fals
     }
     if (url.origin !== 'https://www.googleapis.com') return route.abort();
     state.calls.push(req.method());
-    const headers = {'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'PATCH, GET, OPTIONS'};
+    const headers = {'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'PATCH, PUT, GET, OPTIONS'};
     if (req.method() === 'OPTIONS') return route.fulfill({status: 204, headers});
     assert.equal(req.headers().authorization, 'Bearer ' + bearer);
     const id = url.pathname.split('/').at(-1), file = state.files.get(id);
@@ -98,7 +98,17 @@ export async function fixture(browser, t, contextOptions = {}, liveWorker = fals
     const refusal = state.refusal ?? file?.refusal;
     if (refusal) return route.fulfill({status: refusal.status, headers, json: {error: {errors: [{reason: refusal.reason}]}}});
     if (!file) return route.fulfill({status: 404, headers, json: {error: {}}});
-    if (req.method() === 'PATCH') {
+    const etag = () => '"fixture-v' + file.version + '"';
+    if (url.pathname.startsWith('/drive/v2/files/')) {
+      return route.fulfill({headers, json: {id, version: String(file.version), etag: etag()}});
+    }
+    if (req.method() === 'PUT') {
+      assert.equal(url.pathname, '/upload/drive/v2/files/' + id);
+      assert.equal(url.searchParams.get('uploadType'), 'media');
+      state.beforeTaskWrite?.(file);
+      if (req.headers()['if-match'] !== etag()) return route.fulfill({status: 412, headers, json: {error: {}}});
+    }
+    if (req.method() === 'PATCH' || req.method() === 'PUT') {
       state.patches++;
       file.text = req.postDataBuffer().toString('utf8');
       file.version++;

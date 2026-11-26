@@ -1,12 +1,21 @@
 import {NOW, TASKS} from './core.js?v=0.4.0';
 import {preferredFile} from './device.js?v=0.4.0';
-import {nowContext, todayTasks} from './today.js?v=0.4.0';
+import {nowContext, todayTasks} from './today.js?v=0.12.0';
 
 const panels = new Map([
   [NOW, {element: document.getElementById('today-context')}],
   [TASKS, {element: document.getElementById('today-tasks')}]
 ]);
 let localDate = '', timeZone = '', midnightTimer;
+
+let complete, actionsEnabled = false;
+export function onTaskCompletion(handler) {
+  complete = handler;
+}
+export function setTaskActionsEnabled(enabled) {
+  actionsEnabled = enabled;
+  for (const button of panels.get(TASKS).element.querySelectorAll('[data-complete]')) button.disabled = !enabled;
+}
 
 function render(name, panel) {
   const {element, id, content, readAt, error} = panel;
@@ -36,6 +45,18 @@ function render(name, panel) {
             item.append(marker);
           }
           item.append(entry.text);
+          if (entry.kind === 'open' && panel.canEdit && !error) {
+            const target = {fileId: id, date: localDate, line: entry.lineIndex, content};
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'secondary';
+            button.dataset.complete = '';
+            button.textContent = 'Выполнено';
+            button.setAttribute('aria-label', 'Выполнено — ' + entry.text);
+            button.disabled = !actionsEnabled;
+            button.onclick = () => complete(target);
+            item.append(button);
+          }
           list.append(item);
         }
         body.append(list);
@@ -63,6 +84,7 @@ function render(name, panel) {
     if (readAt.toDateString() !== new Date().toDateString()) Object.assign(stamp, {day: 'numeric', month: 'short'});
     message = 'Прочитано ' + readAt.toLocaleString('ru-RU', stamp);
   }
+  if (name === TASKS && readAt && !panel.canEdit) message += ' · Только чтение';
   if (error) message = readAt ? message + '. Данные могут быть устаревшими. ' + error : error;
   state.textContent = message;
   state.classList.toggle('error', Boolean(error));
@@ -88,7 +110,7 @@ export function clearDay() {
 export function showDayFile({meta, content}) {
   const panel = panels.get(meta.name);
   if (panel?.id !== meta.id) return;
-  Object.assign(panel, {content, readAt: new Date(), error: ''});
+  Object.assign(panel, {content, canEdit: meta.capabilities?.canEdit === true, readAt: new Date(), error: ''});
   render(meta.name, panel);
 }
 
