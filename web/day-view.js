@@ -14,8 +14,8 @@ export function onTaskSourceChange(handler) {
 }
 export function taskSource() {
   const panel = panels.get(TASKS);
-  if (!panel.id || !panel.readAt || !panel.canEdit || panel.error) return null;
-  return {fileId: panel.id, version: panel.version, content: panel.content, date: localDate};
+  if (!panel.id || !panel.readAt || panel.error) return null;
+  return {fileId: panel.id, version: panel.version, content: panel.content, canEdit: panel.canEdit, date: localDate};
 }
 export function onTaskCompletion(handler) {
   complete = handler;

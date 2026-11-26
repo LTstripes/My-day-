@@ -121,6 +121,7 @@ test('reload and reconnect confirm a pending delivery with its original id and k
   await add.click();
   await page.locator('#task-status').filter({hasText: 'неясен'}).waitFor();
   const pending = (await saved(page)).taskDraft;
+  file.canEdit = false;
   await page.reload();
   assert.deepEqual((await saved(page)).taskDraft, pending);
   await page.locator('#connect').click();

@@ -20,7 +20,7 @@ export function initTaskEntry({edit, discard, submit, changed}) {
     if (!button.disabled) submit(select.value);
   };
   function update(source, draft, locked, canSend) {
-    form.hidden = !source && !draft;
+    form.hidden = !source?.canEdit && !draft;
     const fileId = draft?.fileId ?? source?.fileId ?? '';
     if (fileId !== shownId) { message(); shownId = fileId; }
     const next = source ? [source.fileId, source.version, source.date].join('/') : '';
@@ -45,11 +45,12 @@ export function initTaskEntry({edit, discard, submit, changed}) {
     text.disabled = locked || (!source && !draft);
     select.disabled = locked || pending;
     button.disabled = !canSend || source?.fileId !== draft?.fileId || !source || !draft?.text.trim() ||
-      (!pending && (!select.value || Boolean(placesError)));
-    button.textContent = pending ? 'Проверить и повторить' : 'Добавить дело';
+      (!pending && (!source.canEdit || !select.value || Boolean(placesError)));
+    button.textContent = pending ? (source?.canEdit ? 'Проверить и повторить' : 'Проверить отправку') : 'Добавить дело';
     clear.hidden = !draft;
     clear.disabled = locked;
     const fallback = !source && draft ? 'Черновик сохранён. Подключись и обнови список дел.' :
+      source && !source.canEdit ? (pending ? 'Файл доступен для чтения. Можно проверить предыдущую отправку.' : 'Для добавления дела нужен доступ на редактирование.') :
       pending ? 'Отправка начата. При повторе My Day сначала сверит дело с Drive.' :
       draft?.op ? 'Список изменился. Сверь дело с файлом в Drive и подтверди выбор раздела.' : '';
     hint.textContent = notice || placesError || fallback;
