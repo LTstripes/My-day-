@@ -1,4 +1,5 @@
 import {appendRecord, recordBlock, supportedNote, TEST_FILE, writableNote} from './core.js?v=0.4.0';
+import {validPlanName} from './device.js?v=0.10.0';
 
 const FILES = 'https://www.googleapis.com/drive/v3/files/';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files/';
@@ -38,20 +39,31 @@ async function metadata(id, request) {
   return response.json();
 }
 
-function checkFile(meta, id, expectedName, viewOnly = false) {
-  if (meta.id !== id || meta.trashed || meta.mimeType?.startsWith('application/vnd.google-apps.') || !supportedNote(meta.name)) {
-    throw new Error('Выбери Мысли.md, Now.md, To Do now.md или My-Day-test.md из тестового шаблона.');
+function checkFile(meta, id, expectedName, mode = 'note') {
+  const plan = mode === 'plan';
+  if (meta.id !== id || meta.trashed || meta.mimeType?.startsWith('application/vnd.google-apps.') ||
+      !(plan ? validPlanName(meta.name) : supportedNote(meta.name))) {
+    throw new Error(plan ? 'Выбери Markdown-файл плана с расширением .md.' :
+      'Выбери Мысли.md, Now.md, To Do now.md или My-Day-test.md из тестового шаблона.');
   }
   if (expectedName && meta.name !== expectedName) {
     throw new Error('Имя выбранного файла изменилось. Ожидался ' + expectedName + '. Проверь название в Drive.');
   }
   if (Number(meta.size) > MAX_BYTES) throw new Error('Заметка превышает лимит 500 КБ.');
-  if (!viewOnly && writableNote(meta.name) && !meta.capabilities?.canEdit) throw new Error('Для записи в ' + meta.name + ' требуется право редактирования.');
+  if (mode === 'note' && writableNote(meta.name) && !meta.capabilities?.canEdit) throw new Error('Для записи в ' + meta.name + ' требуется право редактирования.');
 }
 
-export async function snapshot(id, request, expectedName, {viewOnly = false} = {}) {
+export function snapshot(id, request, expectedName, {viewOnly = false} = {}) {
+  return readSnapshot(id, request, expectedName, viewOnly ? 'view' : 'note');
+}
+
+export function planSnapshot(id, request, expectedName) {
+  return readSnapshot(id, request, expectedName, 'plan');
+}
+
+async function readSnapshot(id, request, expectedName, mode) {
   const before = await metadata(id, request);
-  checkFile(before, id, expectedName, viewOnly);
+  checkFile(before, id, expectedName, mode);
   const response = await request(FILES + encodeURIComponent(id) + '?alt=media');
   const bytes = await response.arrayBuffer();
   if (bytes.byteLength > MAX_BYTES) throw new Error('Заметка превышает лимит 500 КБ.');
@@ -59,9 +71,9 @@ export async function snapshot(id, request, expectedName, {viewOnly = false} = {
   try { content = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes); }
   catch { throw new Error('Заметка должна быть сохранена в UTF-8.'); }
   const after = await metadata(id, request);
-  checkFile(after, id, before.name, viewOnly);
+  checkFile(after, id, before.name, mode);
   if (!before.version || before.version !== after.version) throw new Error('Не удалось подтвердить версию файла. Нажми «Обновить».');
-  if (after.name === TEST_FILE && !/^\uFEFF?# My Day test\r?\n/.test(content)) {
+  if (mode !== 'plan' && after.name === TEST_FILE && !/^\uFEFF?# My Day test\r?\n/.test(content)) {
     throw new Error('Для первой проверки нужен My-Day-test.md с заголовком из тестового шаблона.');
   }
   return {meta: after, content};

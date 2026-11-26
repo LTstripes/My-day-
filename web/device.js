@@ -7,6 +7,7 @@ export const DEFAULT_PROJECT = '327713401108';
 export const validPickerKey = value => typeof value === 'string' && /^AIza[A-Za-z0-9_-]{35}$/.test(value);
 export const validProject = value => typeof value === 'string' && /^\d{1,20}$/.test(value);
 export const validId = value => typeof value === 'string' && /^[\w-]{1,256}$/.test(value);
+export const validPlanName = value => typeof value === 'string' && /\.md$/i.test(value);
 
 export function newDevice() {
   return {version: 1, pickerKey: '', project: DEFAULT_PROJECT, fileIds: [], noteNames: Object.create(null),
@@ -36,6 +37,9 @@ export function readDevice(raw) {
   }
   if (validPickerKey(saved.pickerKey)) device.pickerKey = saved.pickerKey;
   if (validProject(saved.project)) device.project = saved.project;
+  if (validId(saved.plan?.id) && validPlanName(saved.plan.name)) {
+    device.plan = {id: saved.plan.id, name: saved.plan.name};
+  }
   device.fileIds = [...new Set(saved.fileIds.filter(validId))];
   device.draft = readDraft(saved.draft);
   if (saved.draft != null && !device.draft) throw new Error('Не удалось прочитать сохранённый черновик.');

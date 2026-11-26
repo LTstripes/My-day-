@@ -66,6 +66,18 @@ function dayHeading(title, isoDate) {
   return today === -1 ? undefined : words[today - 1] !== 'не';
 }
 
+function openCheckbox(text) {
+  return listPattern.exec(text)?.[4].match(/^\[ \][ \t]+(.+)$/)?.[1].trim();
+}
+
+export function firstPlanAction(markdown) {
+  for (const {text, literal} of contentLines(markdown)) {
+    const action = !literal && openCheckbox(text);
+    if (action) return action;
+  }
+  return null;
+}
+
 export function todayTasks(markdown, isoDate) {
   const sections = [];
   const selectedItems = [];
@@ -82,7 +94,7 @@ export function todayTasks(markdown, isoDate) {
       if (inToday) selected = true;
       continue;
     }
-    const item = listPattern.exec(text)?.[4].match(/^\[ \][ \t]+(.+)$/)?.[1].trim();
+    const item = openCheckbox(text);
     if (item) {
       openItems.push(item);
       if (inToday) selectedItems.push(item);
