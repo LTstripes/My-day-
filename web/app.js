@@ -3,7 +3,7 @@ import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraf
 import {driveError, saveDraft, snapshot} from './drive.js?v=0.5.0';
 import {clearDay, dayFileFailed, showDayFile, syncDaySources, updateDayDate} from './day-view.js?v=0.4.0';
 import {initNoteSearch} from './search-view.js?v=0.6.1';
-import {buildHandoff} from './handoff.js?v=0.6.0';
+import {buildHandoffHistory} from './handoff.js?v=0.7.0';
 import {leaveForReload, prepareReload, resumeReload} from './reload.js?v=0.6.1';
 
 const CLIENT = '327713401108-rdi4uv2duskfvn8d368i2ui56uhqsulo.apps.googleusercontent.com';
@@ -69,34 +69,74 @@ function restore() {
     storageWarning('Не удалось прочитать локальные данные. Можно работать в этой вкладке или забыть настройки.');
   }
 }
-function setHandoff(target) {
+function setHandoff(target, confirmedOp = null) {
+  const priorOp = !confirmedOp && handoff?.fileId === target?.fileId ? handoff?.selectedOp : null;
   handoff = target;
   $('handoff').hidden = !target;
+  const select = $('handoff-record');
+  select.replaceChildren();
+  $('handoff-choice').hidden = !target || (target.records.length === 1 && Boolean(target.defaultOp));
+  if (target) {
+    target.selectedOp = target.records.some(record => record.op === priorOp) ? priorOp : null;
+    if (!target.defaultOp) {
+      const placeholder = new Option('Выбери сохранённую запись', '');
+      placeholder.disabled = true;
+      select.add(placeholder);
+    }
+    target.records.forEach((record, index) => {
+      const position = index === 0 && target.defaultOp ? 'Последняя' : String(index + 1);
+      select.add(new Option(position + ' · ' + record.snippet, record.op));
+    });
+    select.value = target.selectedOp ?? target.defaultOp ?? '';
+  }
+  selectHandoffRecord();
+}
+function closeHandoffDetails() {
+  if (handoff) handoff.copyAttempt = null;
   $('handoff-details').hidden = true;
   $('handoff-open').setAttribute('aria-expanded', 'false');
   $('handoff-command').value = '';
   $('handoff-status').textContent = '';
 }
+function selectHandoffRecord() {
+  const record = handoff?.records.find(record => record.op === $('handoff-record').value);
+  if (handoff) handoff.record = record;
+  closeHandoffDetails();
+  const state = record?.resultState;
+  $('handoff-result').textContent = record?.result ?? '';
+  $('handoff-result').hidden = !record?.result;
+  $('handoff-result-state').textContent = state === 'saved' ? 'Ответ сохранён в Drive.' :
+    state === 'missing' ? 'Ответа в Drive пока нет.' :
+    state === 'ambiguous' ? 'Ответ в Drive не удалось однозначно подтвердить.' :
+    handoff ? 'Последнюю запись нельзя однозначно определить. Выбери запись из списка.' : '';
+  $('handoff-open').textContent = record && record.op === handoff.defaultOp ?
+    'Разобрать последнюю запись' : 'Разобрать выбранную запись';
+}
 function handoffAvailable() {
   if (session && Date.now() >= session.until) expire();
   return handoff && session && navigator.onLine && !busy && !pickerWindow;
 }
-$('handoff-open').onclick = () => {
+$('handoff-record').onchange = () => {
   if (!handoffAvailable()) return;
-  handoff.copyAttempt = null;
-  const opening = $('handoff-details').hidden;
-  $('handoff-details').hidden = !opening;
-  $('handoff-open').setAttribute('aria-expanded', String(opening));
-  $('handoff-command').value = opening ? handoff.command : '';
+  selectHandoffRecord();
+  handoff.selectedOp = handoff.record?.op ?? null;
+  controls();
+};
+$('handoff-open').onclick = () => {
+  if (!handoffAvailable() || !handoff.record?.command) return;
+  if (!$('handoff-details').hidden) { closeHandoffDetails(); return; }
+  $('handoff-details').hidden = false;
+  $('handoff-open').setAttribute('aria-expanded', 'true');
+  $('handoff-command').value = handoff.record.command;
   $('handoff-status').textContent = '';
 };
 $('handoff-copy').onclick = async () => {
-  if (!handoffAvailable() || $('handoff-details').hidden) return;
+  if (!handoffAvailable() || !handoff.record?.command || $('handoff-details').hidden) return;
   const attempt = {};
   handoff.copyAttempt = attempt;
   let copied = false;
   try {
-    await navigator.clipboard.writeText(handoff.command);
+    await navigator.clipboard.writeText(handoff.record.command);
     copied = true;
   } catch { /* The visible text remains available when clipboard permission is missing. */ }
   if (!handoffAvailable() || handoff.copyAttempt !== attempt) return;
@@ -160,7 +200,8 @@ function controls() {
   const connected = Boolean(session && Date.now() < session.until);
   const draft = device.draft;
   const canWrite = writableNote(device.noteNames[device.activeId]);
-  $('handoff-open').disabled = $('handoff-copy').disabled = locked || !connected;
+  $('handoff-record').disabled = locked || !connected || !handoff;
+  $('handoff-open').disabled = $('handoff-copy').disabled = locked || !connected || !handoff?.record?.command;
   $('remember').disabled = locked;
   $('key').disabled = $('project').disabled = locked;
   $('connect').disabled = locked || !client || connected;
@@ -232,9 +273,9 @@ function sessionRequest(current, signal) {
   };
 }
 function show(result, confirmedOp = null) {
-  const command = !networkChanged && navigator.onLine && session && Date.now() < session.until &&
-    buildHandoff(result.meta.id, result.meta.name, result.content, confirmedOp);
-  setHandoff(command ? {fileId: result.meta.id, version: result.meta.version, command} : null);
+  const history = !networkChanged && navigator.onLine && session && Date.now() < session.until ?
+    buildHandoffHistory(result.meta.id, result.meta.name, result.content, confirmedOp) : null;
+  setHandoff(history?.records.length ? {...history, fileId: result.meta.id, version: result.meta.version} : null, confirmedOp);
   $('preview').textContent = readableNote(result.content).text;
   readAt = new Date().toLocaleString('ru-RU');
   $('fresh').textContent = 'Прочитано из Drive · ' + readAt;
