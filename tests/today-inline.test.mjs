@@ -7,6 +7,21 @@ let browser;
 before(async () => { browser = await chromium.launch(); });
 after(async () => { await browser?.close(); });
 
+test('navigation opens from the phone header and remains visible on a wider screen', async t => {
+  const {open} = await fixture(browser, t, {viewport:{width:360,height:800}});
+  const page = await open();
+  const menu = page.locator('#page-menu');
+  const library = menu.getByRole('link', {name:'Мои заметки'});
+  assert.equal(await library.isVisible(), false);
+  await menu.locator('summary').focus();
+  await page.keyboard.press('Enter');
+  await library.click();
+  assert.equal(new URL(page.url()).hash, '#library');
+  assert.equal(await library.isVisible(), false);
+  await page.setViewportSize({width:1024,height:800});
+  await library.waitFor();
+});
+
 async function chooseForToday(page, id) {
   await page.evaluate(id => { pickTest.id = id; }, id);
   await page.locator('#today-capture').click();

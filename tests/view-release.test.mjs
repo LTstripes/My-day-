@@ -47,7 +47,8 @@ test('explicit chart save travels to a fresh profile, keeps the original Markdow
   assert.equal(await page.locator('#reader-view').inputValue(), 'text');
   await chart(page);
   assert.equal(state.patches, 0);
-  assert.equal(await page.locator('#chart-source').textContent(), source.slice(source.indexOf('| Дата')).trimEnd());
+  const displayedTable = source.slice(source.indexOf('| Дата')).trimEnd().replace(/\r\n?/g, '\n');
+  assert.equal(await page.locator('#chart-source').textContent(), displayedTable);
   await page.locator('#reader-save').click();
   await page.locator('#reader-save-status').filter({hasText:'подтверждён'}).waitFor();
   assert.equal(state.patches, 1);

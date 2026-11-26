@@ -15,11 +15,11 @@ import {leaveForReload, prepareReload, resumeReload} from './reload.js?v=0.6.1';
 const CLIENT = '327713401108-rdi4uv2duskfvn8d368i2ui56uhqsulo.apps.googleusercontent.com';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const $ = id => document.getElementById(id);
-const wideScreen = window.matchMedia('(min-width: 681px)');
-$('page-menu').open = wideScreen.matches;
-wideScreen.addEventListener('change', event => { $('page-menu').open = event.matches; });
+const compactScreen = window.matchMedia('(max-width: 680px)');
+$('page-menu').open = !compactScreen.matches;
+compactScreen.addEventListener('change', event => { $('page-menu').open = !event.matches; });
 $('page-menu').addEventListener('click', event => {
-  if (!wideScreen.matches && event.target.closest('a')) $('page-menu').open = false;
+  if (compactScreen.matches && event.target.closest('a')) $('page-menu').open = false;
 });
 
 let device = newDevice(), personal = false, stored = null, legacy = null, storageFault = false;
