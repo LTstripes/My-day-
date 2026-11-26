@@ -33,7 +33,11 @@ function fixture() {
       return Response.json({id, version: String(state.version), etag: '"tag-' + state.version + '"', ...state.tag});
     }
     assert.equal(path.pathname, '/drive/v3/files/' + id);
-    if (path.searchParams.get('alt') === 'media') return new Response(state.content);
+    if (path.searchParams.get('alt') === 'media') {
+      const response = new Response(state.content);
+      if (state.writes) state.duringReadback?.();
+      return response;
+    }
     return Response.json({id, version: String(state.version), name: state.name, mimeType: 'text/markdown',
       capabilities: {canEdit: state.canEdit}});
   }
@@ -48,6 +52,35 @@ test('one conditional update to the selected file preserves BOM, mixed newlines,
   assert.equal(result.verified.meta.id, selection.fileId);
   assert.equal(result.verified.content, finished);
   assert.equal(state.content, finished);
+});
+
+test('a version change during readback retries one complete snapshot without sending a second write', async () => {
+  const {state, request} = fixture();
+  let reads = 0;
+  state.duringReadback = () => { if (++reads === 1) state.version++; };
+  const result = await completeTask(selection, request);
+  assert.equal(result.verified.content, finished);
+  assert.equal(result.verified.meta.version, String(state.version));
+  assert.equal(reads, 2);
+  assert.equal(state.writes, 1);
+});
+
+test('a second version change or a stable external edit cannot confirm the initial write', async () => {
+  for (const keepChanging of [true, false]) {
+    const {state, request} = fixture();
+    let reads = 0;
+    state.duringReadback = () => {
+      if (++reads === 1) {
+        state.content += '\nПараллельная правка';
+        state.version++;
+      } else if (keepChanging) state.version++;
+    };
+    await assert.rejects(completeTask(selection, request), error => keepChanging ?
+      error.message.includes('подтвердить версию') : error.current?.content === state.content);
+    assert.equal(reads, 2);
+    assert.equal(state.writes, 1);
+    assert(state.content.endsWith('Параллельная правка'));
+  }
 });
 
 test('a lost response can be retried without another write or a toggle', async () => {

@@ -32,9 +32,9 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
 #handoff-queue{margin-top:14px}#handoff-filter,#handoff-record{min-height:44px}#handoff-record{width:100%}#handoff-result{overflow-wrap:anywhere}
 [data-complete]{font-size:.86rem;padding:4px 10px;margin-inline-start:8px}
 </style>
-<script type="module" src="./web/app.js?v=0.12.0"></script>
+<script type="module" src="./web/app.js?v=0.13.0"></script>
 </head><body><main>
-<header class="masthead"><div><small>My Day · 0.12.0</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a><a href="./prototype/">Макет</a></nav></header>
+<header class="masthead"><div><small>My Day · 0.13.0</small><h1>Мой день</h1></div><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a><a href="./prototype/">Макет</a></nav></header>
 <div class="connection-bar"><div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div><button id="connect" disabled>Подключить Google Drive</button></div>
 <section id="today" aria-labelledby="today-title">
   <div class="day-head"><div><h2 id="today-title">Сегодня</h2><p class="muted"><time id="today-date"></time> · <span id="today-zone"></span></p></div>
@@ -95,6 +95,11 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
   <div class="actions"><button id="disconnect" class="secondary" disabled>Отключиться</button><button id="forget" class="secondary" disabled>Забыть это устройство</button></div>
 </section>
 <section id="library"><h2>Мои заметки</h2>
+  <details id="source-manager" hidden><summary>Источники My Day</summary>
+    <label for="source-select">Источник</label><select id="source-select"></select>
+    <button id="source-remove" type="button" class="secondary" disabled>Убрать из My Day</button>
+    <p id="source-hint" class="meta muted" role="status">Файл останется в Google Drive.</p>
+  </details>
   <p>Выбери «Мысли.md» для быстрой записи, «Now.md» или «To Do now.md» для чтения.</p>
   <p id="first-pick">Для пробы подойдёт My-Day-test.md. Можно <a href="./web/My-Day-test.md" download="My-Day-test.md">скачать шаблон</a> и загрузить его в Drive.</p>
   <div id="known-files" hidden><label for="known">Открыть выбранную ранее заметку</label><select id="known"></select></div>

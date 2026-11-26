@@ -29,7 +29,18 @@ export function readDraft(value, legacy = false) {
 }
 
 export function readDevice(raw) {
-  const saved = JSON.parse(raw);
+  return normalizeDevice(JSON.parse(raw));
+}
+
+export function withoutSource(device, id) {
+  return normalizeDevice({...device,
+    fileIds: device.fileIds.filter(fileId => fileId !== id),
+    plans: device.plans?.filter(plan => plan.id !== id),
+    plan: device.plan?.id === id ? null : device.plan
+  });
+}
+
+function normalizeDevice(saved) {
   if (saved?.version !== 1 || !Array.isArray(saved.fileIds)) throw new Error('Некорректные настройки My Day.');
   const device = newDevice();
   if (typeof saved.connectionEpoch === 'string' && /^[a-f0-9-]{36}$/i.test(saved.connectionEpoch)) {

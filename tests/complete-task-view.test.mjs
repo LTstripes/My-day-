@@ -96,10 +96,24 @@ test('a lost write reply without any plan can be reconciled by refresh without a
   const reads = state.mediaReads.length;
   await page.locator('#today-refresh').click();
   await card.filter({hasText: 'Выполнено задач: 2'}).waitFor();
+  await notice(page, 'Обзор обновлён из Drive.');
+  assert.equal(await page.locator('#status').evaluate(el => el.classList.contains('error')), false);
   assert(state.mediaReads.slice(reads).includes(taskId));
   assert.equal(await button.count(), 0);
   assert.equal(state.patches, 1);
   assert.equal(await page.locator('#thought').inputValue(), draftText);
+});
+
+test('refresh keeps a source failure visible while another Today source loads successfully', async t => {
+  const {page, state, tasks, card} = await setup(t);
+  state.files.set('focus', {name: 'Now.md', text: '# Now\nФокус', version: 1});
+  await pick(page, 'focus', '[data-day-pick="Now.md"]');
+  await page.locator('#today-context').filter({hasText: 'Фокус'}).waitFor();
+  tasks.refusal = {status: 403, reason: 'appNotAuthorizedToFile'};
+  await page.locator('#today-refresh').click();
+  await notice(page, 'Не удалось обновить весь обзор');
+  assert.match(await card.textContent(), /403/);
+  assert.equal(await page.locator('#status').evaluate(el => el.classList.contains('error')), true);
 });
 
 test('a concurrent edit yields 412, refreshes the card, and a new click marks the chosen row', async t => {

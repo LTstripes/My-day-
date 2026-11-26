@@ -1,7 +1,7 @@
 import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, TEST_FILE, writableNote} from './core.js?v=0.12.0';
-import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject} from './device.js?v=0.11.0';
-import {driveError, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.12.0';
-import {completeTask} from './complete-task.js?v=0.12.0';
+import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.13.0';
+import {driveError, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.13.0';
+import {completeTask} from './complete-task.js?v=0.13.0';
 import {firstPlanAction} from './today.js?v=0.12.0';
 import {clearDay, dayFileFailed, onTaskCompletion, setTaskActionsEnabled, showDayFile, syncDaySources, updateDayDate} from './day-view.js?v=0.12.0';
 import {initNoteSearch} from './search-view.js?v=0.11.0';
@@ -370,6 +370,7 @@ async function readPlan(id = device.plan?.id, picking = false) {
     }
     showPlanResult(result);
     search.changed(result.meta);
+    return true;
   } catch (error) {
     if (session !== current || planReads.get(id) !== attempt) return;
     if (error.access === 'expired' || error.access === 'consent') { fail(error); return; }
@@ -409,13 +410,36 @@ function syncFields() {
   $('setup').open = !device.pickerKey;
   $('thought').value = device.draft?.text ?? '';
 }
-function syncSearchFiles() {
+function sourcesFor(device) {
   const files = new Map(device.fileIds.map(id => [id, {id, name: device.noteNames[id], note: true, plan: false}]));
   for (const {id, name} of device.plans ?? (device.plan ? [device.plan] : [])) {
     // Keep note validation for a file selected in both sections under the same name.
     files.set(id, {id, name, note: files.get(id)?.name === name, plan: true});
   }
-  search.setFiles([...files.values()]);
+  return files;
+}
+function syncSearchFiles() {
+  const files = [...sourcesFor(device).values()];
+  search.setFiles(files);
+  const select = $('source-select'), previous = select.value;
+  select.replaceChildren(new Option('Выбери заметку или план', ''));
+  for (const file of files) {
+    const duplicate = files.some(other => other.id !== file.id && other.name === file.name);
+    select.add(new Option(duplicate ? file.name + ' · ID ' + file.id : file.name, file.id));
+  }
+  select.value = files.some(file => file.id === previous) ? previous : '';
+  $('source-manager').hidden = !files.length;
+  sourceControls();
+}
+function sourceControls() {
+  const id = $('source-select').value;
+  const hasDraft = id && (id === device.draft?.fileId || id === legacy?.fileId);
+  const locked = Boolean(busy || awaitingLogin || pickerWindow || resuming || storageFault);
+  $('source-select').disabled = locked;
+  $('source-remove').disabled = locked || !id || Boolean(hasDraft);
+  $('source-hint').textContent = hasDraft
+    ? 'К файлу привязан черновик. Сначала сохрани мысль в Drive.'
+    : 'Файл останется в Google Drive.';
 }
 function listFiles() {
   syncDaySources(device);
@@ -466,6 +490,7 @@ function controls() {
     (hasConnected || device.activeId || device.plan ? 'Подключиться снова' : 'Подключить Google Drive');
   $('disconnect').disabled = editingLocked || !session;
   $('forget').disabled = editingLocked;
+  sourceControls();
   search.setControls(connected, locked);
   setTaskActionsEnabled(connected && !locked && !storageFault && navigator.onLine);
   $('search-draft').hidden = !draft;
@@ -630,12 +655,12 @@ function updateSources(result) {
 async function refreshFiles(ids, check = null) {
   const current = session;
   const fetchInSession = sessionRequest(current);
-  await Promise.all([...new Set(ids.filter(Boolean))].map(async id => {
+  return Promise.all([...new Set(ids.filter(Boolean))].map(async id => {
     try {
       const result = await snapshot(id, fetchInSession, device.noteNames[id]);
-      if (session !== current) return;
+      if (session !== current || !device.fileIds.includes(id)) return;
       if (check && (returnCheck !== check || device.activeId !== id)) return;
-      if (check && Date.now() >= current.until) { expire(); return; }
+      if (Date.now() >= current.until) { expire(); return; }
       updateSources(result);
       if (device.activeId === id) {
         const message = 'Получено актуальное содержимое ' + result.meta.name + '.';
@@ -644,8 +669,9 @@ async function refreshFiles(ids, check = null) {
           status(handoff?.record ? message : 'Выбранную запись больше не удаётся определить в ' + result.meta.name + '.');
         } else showRead(result, message);
       }
+      return true;
     } catch (error) {
-      if (session === current && (!check || returnCheck === check)) applyReadError(id, error);
+      if (session === current && device.fileIds.includes(id) && (!check || returnCheck === check)) applyReadError(id, error);
     }
   }));
 }
@@ -847,6 +873,8 @@ function chooseFile(expectedName, forPlan = false) {
           return;
         }
         run(async () => {
+          const wasKnown = sourcesFor(device).has(id);
+          const selectionCurrent = () => session === current && (!wasKnown || sourcesFor(device).has(id));
           const pinned = device.noteNames[id];
           if (expectedName && pinned && expectedName !== pinned) {
             status('Выбери ' + expectedName + '. Этот файл уже выбран как ' + pinned + '.', true);
@@ -855,10 +883,10 @@ function chooseFile(expectedName, forPlan = false) {
           let result;
           try { result = await snapshot(id, sessionRequest(current), expectedName || pinned); }
           catch (error) {
-            if (session === current) applyReadError(id, error, true);
+            if (selectionCurrent()) applyReadError(id, error, true);
             return;
           }
-          if (session !== current) return;
+          if (!selectionCurrent()) return;
           const name = result.meta.name;
           if (name !== TEST_FILE) device.preferredIds[name] = id;
           if (forDay && device.activeId && device.activeId !== id) {
@@ -880,6 +908,22 @@ function chooseFile(expectedName, forPlan = false) {
     pickerWindow.setVisible(true);
   } catch (error) { pickerWindow = null; fail(error); controls(); }
 }
+$('source-select').onchange = sourceControls;
+$('source-remove').onclick = () => {
+  const id = $('source-select').value;
+  if ($('source-remove').disabled || !sourcesFor(device).has(id)) return;
+  const previous = device;
+  const label = $('source-select').selectedOptions[0].text;
+  device = withoutSource(device, id);
+  if (!persist()) {
+    device = previous;
+    controls();
+    return;
+  }
+  syncSelection(previous);
+  status(label + ' убран из списка источников My Day.');
+  controls();
+};
 $('pick').onclick = () => chooseFile();
 $('plan-pick').onclick = () => chooseFile(undefined, true);
 $('plan-refresh').onclick = () => run(() => readPlan(), 'plan');
@@ -900,7 +944,19 @@ $('plan-pin').onclick = () => {
 for (const button of document.querySelectorAll('[data-day-pick]')) {
   button.onclick = () => chooseFile(button.dataset.dayPick);
 }
-$('today-refresh').onclick = () => run(() => Promise.all([refreshFiles(dayIds()), readPlans([device.pinnedPlanId])]), 'plan');
+$('today-refresh').onclick = () => run(async () => {
+  const current = session;
+  status('Обновляем обзор из Drive…');
+  const [files, plans] = await Promise.all([refreshFiles(dayIds()), readPlans([device.pinnedPlanId])]);
+  if (!current || current !== session || refreshAfterBusy || storageFault) return;
+  if (Date.now() >= current.until) { expire(); return; }
+  if ($('status').classList.contains('error')) return;
+  if (networkChanged || !navigator.onLine || [...files, ...plans].some(ok => !ok)) {
+    status('Не удалось обновить весь обзор. Проверь состояние источников ниже.', true);
+  } else {
+    status('Обзор обновлён из Drive.');
+  }
+}, 'plan');
 onTaskCompletion(target => run(async () => {
   const current = session;
   const {fileId, date} = target;
@@ -995,8 +1051,45 @@ $('save').onclick = () => run(async () => {
 window.addEventListener('beforeunload', event => {
   if (device.draft && (!personal || storageFault)) { event.preventDefault(); event.returnValue = true; }
 });
+function syncSelection(previous) {
+  const previousSources = [preferredFile(previous, NOW), preferredFile(previous, TASKS)];
+  const targetChanged = previous.activeId !== device.activeId ||
+    previous.noteNames[previous.activeId] !== device.noteNames[device.activeId];
+  const planChanged = previous.plan?.id !== device.plan?.id || previous.pinnedPlanId !== device.pinnedPlanId ||
+    JSON.stringify(previous.plans) !== JSON.stringify(device.plans);
+  listFiles();
+  if (targetChanged) clearPreview();
+  const before = sourcesFor(previous), retained = sourcesFor(device);
+  for (const id of planReads.keys()) {
+    if (before.has(id) && !retained.has(id)) planReads.delete(id);
+  }
+  if (planChanged) {
+    for (const old of previous.plans ?? []) {
+      const replacement = device.plans?.find(plan => plan.id === old.id);
+      if (replacement?.name !== old.name) {
+        planReads.delete(old.id);
+        planCards.delete(old.id);
+      }
+    }
+    listPlans();
+  }
+  const changed = dayIds().filter(id => id && !previousSources.includes(id));
+  if (targetChanged && device.activeId) changed.push(device.activeId);
+  if (session && navigator.onLine && (changed.length || planChanged)) {
+    if (busy) refreshAfterBusy = true;
+    else {
+      const missingPlans = [device.plan?.id, device.pinnedPlanId].filter(id => id && !planCards.get(id)?.fresh);
+      run(() => Promise.all([refreshFiles(changed), planChanged && readPlans(missingPlans)]));
+    }
+  }
+}
 window.addEventListener('storage', event => {
-  if (event.key === LEGACY_DRAFT && event.newValue === null) { legacy = null; controls(); }
+  if (event.key === LEGACY_DRAFT) {
+    try { legacy = readDraft(JSON.parse(localStorage.getItem(LEGACY_DRAFT)), true); }
+    catch { storageWarning('Не удалось прочитать черновик прежней версии. Проверь локальные настройки.'); }
+    controls();
+    return;
+  }
   if (!personal || (event.key !== DEVICE_KEY && event.key !== null) || event.newValue === stored) return;
   try {
     const latest = localStorage.getItem(DEVICE_KEY);
@@ -1008,47 +1101,35 @@ window.addEventListener('storage', event => {
       status('Локальные настройки удалены в другой вкладке.');
     } else {
       const next = readDevice(latest);
-      const planChanged = device.plan?.id !== next.plan?.id || device.pinnedPlanId !== next.pinnedPlanId ||
-        JSON.stringify(device.plans) !== JSON.stringify(next.plans);
+      const previous = device;
+      const nextSources = sourcesFor(next);
+      const removed = [...sourcesFor(previous).keys()].filter(id => !nextSources.has(id));
       if (device.connectionEpoch && next.connectionEpoch !== device.connectionEpoch) {
         endSession();
         awaitingLogin = false;
         promptNext = 'select_account';
         status('Подключение завершено в другой вкладке.');
       }
-      if ((busy && busy !== 'search' && busy !== 'return' && busy !== 'plan') || storageFault) {
-        if (planChanged) {
-          device.plan = next.plan;
-          device.plans = next.plans;
-          device.pinnedPlanId = next.pinnedPlanId;
-          clearPlans();
-          listPlans();
-          syncSearchFiles();
-          if (busy && session) refreshAfterBusy = true;
+      const writing = busy && busy !== 'search' && busy !== 'return' && busy !== 'plan';
+      const compatibleRemoval = removed.length && JSON.stringify(device.draft) === JSON.stringify(next.draft);
+      if ((writing && !compatibleRemoval) || storageFault) {
+        // Keep possibly unsaved input in this tab while dropping other detached sources immediately.
+        for (const id of removed) {
+          if (device.draft?.fileId !== id) device = withoutSource(device, id);
         }
+        device = {...device, plan: next.plan, plans: next.plans, pinnedPlanId: next.pinnedPlanId};
+        syncSelection(previous);
         storageWarning('Личные данные изменились в другой вкладке. Проверь свой черновик и обнови страницу.');
         controls();
         return;
       }
-      const previousId = device.activeId;
-      const previousName = device.noteNames[previousId];
-      const previousSources = dayIds();
       device = next;
       stored = latest;
       syncFields();
-      listFiles();
-      const targetChanged = previousId !== device.activeId || previousName !== device.noteNames[device.activeId];
-      if (targetChanged) clearPreview();
-      if (planChanged) {
-        clearPlans();
-        listPlans();
+      if (removed.length && previous.connectionEpoch === next.connectionEpoch) {
+        status('Список источников изменён в другой вкладке.');
       }
-      const changed = dayIds().filter(id => id && !previousSources.includes(id));
-      if (targetChanged && device.activeId) changed.push(device.activeId);
-      if (session && (changed.length || planChanged)) {
-        if (busy) refreshAfterBusy = true;
-        else run(() => Promise.all([refreshFiles(changed), planChanged && readPlans([device.plan?.id, device.pinnedPlanId])]));
-      }
+      syncSelection(previous);
     }
   } catch {
     storageWarning('Не удалось прочитать настройки, изменённые в другой вкладке.');
