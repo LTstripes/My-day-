@@ -67,4 +67,3 @@ export function noteView(raw, {override, defaultView = 'text'} = {}) {
   }
   return result;
 }
-

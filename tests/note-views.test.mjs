@@ -56,4 +56,3 @@ test('insufficient structured content falls back to readable text with an explan
     assert(view.notice);
   }
 });
-
