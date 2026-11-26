@@ -3,6 +3,7 @@ import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraf
 import {driveError, saveDraft, snapshot} from './drive.js?v=0.5.0';
 import {clearDay, dayFileFailed, showDayFile, syncDaySources, updateDayDate} from './day-view.js?v=0.4.0';
 import {initNoteSearch} from './search-view.js?v=0.5.0';
+import {buildHandoff} from './handoff.js?v=0.6.0';
 
 const CLIENT = '327713401108-rdi4uv2duskfvn8d368i2ui56uhqsulo.apps.googleusercontent.com';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -11,9 +12,16 @@ const $ = id => document.getElementById(id);
 let device = newDevice(), personal = false, stored = null, legacy = null, storageFault = false;
 let client = null, session = null, expiryTimer, pickerReady = false, pickerWindow = null, awaitingLogin = false, busy = false;
 let promptNext = null, hasConnected = false, readAt = '', refreshAfterSearch = false;
+let handoff = null, networkChanged = false;
 const search = initNoteSearch({
   run: action => run(action, 'search'),
-  read: (file, signal) => snapshot(file.id, sessionRequest(session, signal), file.name, {viewOnly: true}),
+  async read(file, signal) {
+    const current = session;
+    const result = await snapshot(file.id, sessionRequest(current, signal), file.name, {viewOnly: true});
+    if (!signal.aborted && current === session && handoff?.fileId === file.id &&
+        (handoff.version !== result.meta.version || !result.meta.capabilities?.canEdit)) setHandoff(null);
+    return result;
+  },
   onError(id, error) {
     applyReadError(id, error);
     return errorMessage(error);
@@ -59,7 +67,47 @@ function restore() {
     storageWarning('Не удалось прочитать локальные данные. Можно работать в этой вкладке или забыть настройки.');
   }
 }
+function setHandoff(target) {
+  handoff = target;
+  $('handoff').hidden = !target;
+  $('handoff-details').hidden = true;
+  $('handoff-open').setAttribute('aria-expanded', 'false');
+  $('handoff-command').value = '';
+  $('handoff-status').textContent = '';
+}
+function handoffAvailable() {
+  if (session && Date.now() >= session.until) expire();
+  return handoff && session && navigator.onLine && !busy && !pickerWindow;
+}
+$('handoff-open').onclick = () => {
+  if (!handoffAvailable()) return;
+  handoff.copyAttempt = null;
+  const opening = $('handoff-details').hidden;
+  $('handoff-details').hidden = !opening;
+  $('handoff-open').setAttribute('aria-expanded', String(opening));
+  $('handoff-command').value = opening ? handoff.command : '';
+  $('handoff-status').textContent = '';
+};
+$('handoff-copy').onclick = async () => {
+  if (!handoffAvailable() || $('handoff-details').hidden) return;
+  const attempt = {};
+  handoff.copyAttempt = attempt;
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(handoff.command);
+    copied = true;
+  } catch { /* The visible text remains available when clipboard permission is missing. */ }
+  if (!handoffAvailable() || handoff.copyAttempt !== attempt) return;
+  if (copied) {
+    $('handoff-status').textContent = 'Команда скопирована. Вставь её в чат с помощником.';
+  } else {
+    $('handoff-command').focus();
+    $('handoff-command').select();
+    $('handoff-status').textContent = 'Текст команды выделен. Скопируй его вручную через меню браузера или клавишами Ctrl+C (⌘C на Mac).';
+  }
+};
 function clearPreview() {
+  setHandoff(null);
   readAt = '';
   $('preview').textContent = 'Здесь появится текст из Drive.';
   $('fresh').textContent = 'Файл ещё не прочитан в этом подключении.';
@@ -110,6 +158,7 @@ function controls() {
   const connected = Boolean(session && Date.now() < session.until);
   const draft = device.draft;
   const canWrite = writableNote(device.noteNames[device.activeId]);
+  $('handoff-open').disabled = $('handoff-copy').disabled = locked || !connected;
   $('remember').disabled = locked;
   $('key').disabled = $('project').disabled = locked;
   $('connect').disabled = locked || !client || connected;
@@ -180,7 +229,10 @@ function sessionRequest(current, signal) {
     return request(url, signal ? {...options, signal} : options);
   };
 }
-function show(result) {
+function show(result, confirmedOp = null) {
+  const command = !networkChanged && navigator.onLine && session && Date.now() < session.until &&
+    buildHandoff(result.meta.id, result.meta.name, result.content, confirmedOp);
+  setHandoff(command ? {fileId: result.meta.id, version: result.meta.version, command} : null);
   $('preview').textContent = result.content;
   readAt = new Date().toLocaleString('ru-RU');
   $('fresh').textContent = 'Прочитано из Drive · ' + readAt;
@@ -199,13 +251,15 @@ function finishDraft(message) {
   status(message);
 }
 function showRead(result, message) {
-  show(result);
   const draft = device.draft;
-  if (draft?.op && draft.fileId === result.meta.id) {
-    if (result.content.includes(recordBlock(draft))) {
-      finishDraft('Запись уже есть в ' + result.meta.name + '. Доставка подтверждена без дубля.');
-      return;
-    }
+  const pending = draft?.op && draft.fileId === result.meta.id;
+  const delivered = pending && result.content.includes(recordBlock(draft));
+  show(result, delivered ? draft.op : null);
+  if (delivered) {
+    finishDraft('Запись уже есть в ' + result.meta.name + '. Доставка подтверждена без дубля.');
+    return;
+  }
+  if (pending) {
     message += ' Черновик сохранён. Для отправки нажми «Проверить и повторить».';
   }
   status(message);
@@ -215,6 +269,7 @@ function errorMessage(error) {
     'Не удалось связаться с Drive. Проверь интернет и повтори попытку.' : error.message || 'Не удалось выполнить операцию.';
 }
 function fail(error) {
+  setHandoff(null);
   if (error.access === 'expired' || error.access === 'consent') {
     endSession();
     if (error.access === 'consent') promptNext = 'consent';
@@ -230,6 +285,7 @@ function fail(error) {
 async function run(action, operation = 'drive') {
   if (busy || awaitingLogin || pickerWindow) return;
   const current = session;
+  networkChanged = false;
   busy = operation;
   controls();
   try { await action(); }
@@ -541,7 +597,7 @@ $('save').onclick = () => run(async () => {
   const {verified, already} = await saveDraft(draft, sessionRequest(current), name);
   if (session !== current) return;
   search.changed(verified.meta);
-  show(verified);
+  show(verified, draft.op);
   finishDraft(already ? 'Запись уже была в Drive. Повтор подтверждён без дубля.' : 'Записано в ' + name + ' и подтверждено повторным чтением.');
 });
 window.addEventListener('beforeunload', event => {
@@ -562,14 +618,16 @@ window.addEventListener('storage', event => {
       storageWarning('Личные данные изменились в другой вкладке. Проверь свой черновик и обнови страницу.');
     } else {
       const previousId = device.activeId;
+      const previousName = device.noteNames[previousId];
       const previousSources = dayIds();
       device = readDevice(latest);
       stored = latest;
       syncFields();
       listFiles();
-      if (previousId !== device.activeId) clearPreview();
+      const targetChanged = previousId !== device.activeId || previousName !== device.noteNames[device.activeId];
+      if (targetChanged) clearPreview();
       const changed = dayIds().filter(id => id && !previousSources.includes(id));
-      if (previousId !== device.activeId && device.activeId) changed.push(device.activeId);
+      if (targetChanged && device.activeId) changed.push(device.activeId);
       if (session && changed.length) {
         if (busy === 'search') refreshAfterSearch = true;
         else run(() => refreshFiles(changed));
@@ -585,6 +643,7 @@ document.addEventListener('visibilitychange', () => {
   if (session && Date.now() >= session.until) expire();
 });
 window.addEventListener('pageshow', event => { if (event.persisted) location.reload(); });
+window.addEventListener('offline', () => { networkChanged = true; setHandoff(null); });
 
 restore();
 updateDayDate();
