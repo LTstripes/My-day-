@@ -1,4 +1,4 @@
-import {INBOX, NOW, readableNote, recordBlock, TASKS, TEST_FILE, writableNote} from './core.js?v=0.6.1';
+import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, TEST_FILE, writableNote} from './core.js?v=0.12.0';
 import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject} from './device.js?v=0.11.0';
 import {driveError, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.10.0';
 import {firstPlanAction} from './today.js?v=0.10.0';
@@ -560,13 +560,18 @@ function finishDraft(message) {
 function showRead(result, message) {
   const draft = device.draft;
   const pending = draft?.op && draft.fileId === result.meta.id;
-  const delivered = pending && result.content.includes(recordBlock(draft));
+  const delivery = pending && recordDelivery(result.content, draft);
+  const delivered = delivery === 'delivered';
   show(result, delivered ? draft.op : null);
   if (delivered) {
     finishDraft('Запись уже есть в ' + result.meta.name + '. Доставка подтверждена без дубля.');
     return;
   }
   if (pending) {
+    if (delivery === 'conflict') {
+      status(recordConflictMessage, true);
+      return;
+    }
     message += ' Черновик сохранён. Для отправки нажми «Проверить и повторить».';
   }
   status(message);
