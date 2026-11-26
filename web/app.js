@@ -24,6 +24,9 @@ const planCards = new Map();
 let resuming = false;
 const reader = initNoteReader();
 let readerAttempt = null;
+// A single action may read the same ID through several roles. A Drive access
+// refusal invalidates every response for that ID until a new action starts.
+const deniedFileReads = new Set();
 const taskEntry = initTaskEntry({edit: editTaskDraft, discard: discardTaskDraft, submit: submitTask, changed: controls});
 onTaskSourceChange(controls);
 const search = initNoteSearch({
@@ -33,7 +36,7 @@ const search = initNoteSearch({
     const requestFile = sessionRequest(current, signal);
     const result = await (file.note ? snapshot(file.id, requestFile, file.name, {viewOnly: true}) :
       file.plan ? planSnapshot(file.id, requestFile, file.name) : markdownSnapshot(file.id, requestFile, file.name));
-    if (signal.aborted || current !== session) return;
+    if (signal.aborted || current !== session || deniedFileReads.has(file.id)) return;
     if (Date.now() >= current.until) { expire(); return; }
     if (networkChanged || !navigator.onLine) throw new Error('Связь прервалась. Повтори поиск.');
     if (file.plan) showPlanResult(result);
@@ -355,7 +358,10 @@ function showPlanResult(result) {
   setPlanCard(result.meta.id, {action, message, fresh: true});
 }
 function planFailed(id, error) {
-  if (error.access === 'file' && id === device.readerId) reader.clear(errorMessage(error), true);
+  if (error.access === 'file') {
+    deniedFileReads.add(id);
+    if (id === device.readerId) reader.clear(errorMessage(error), true);
+  }
   planReads.delete(id);
   setPlanCard(id, {message: error.access === 'file' ? planAccessMessage : errorMessage(error), error: true});
 }
@@ -368,7 +374,7 @@ async function readPlan(id = device.plan?.id, picking = false) {
   setPlanCard(id, {message: 'Читаем план из Drive…'});
   try {
     const result = await planSnapshot(id, sessionRequest(current), picking ? undefined : known?.name);
-    if (session !== current || planReads.get(id) !== attempt) return;
+    if (session !== current || planReads.get(id) !== attempt || deniedFileReads.has(id)) return;
     if (Date.now() >= current.until) { expire(); return; }
     if (networkChanged || !navigator.onLine) { clearPlans('Связь прервалась. Повтори чтение плана.', true); return; }
     if (picking) {
@@ -423,7 +429,7 @@ async function readReader(id = device.readerId, selecting = false, expectedName)
     (!known || sourcesFor(device).get(id)?.name === known.name);
   try {
     const result = await markdownSnapshot(id, sessionRequest(current), selecting ? expectedName : known?.name);
-    if (!valid()) return;
+    if (!valid() || deniedFileReads.has(id)) return;
     if (Date.now() >= current.until) { expire(); return; }
     if (!navigator.onLine || networkChanged) { reader.clear('Связь прервалась. Повтори чтение заметки.', true); return; }
     if (selecting) {
@@ -697,6 +703,7 @@ async function run(action, operation = 'drive') {
   if (busy || awaitingLogin || pickerWindow) return;
   const current = session;
   networkChanged = false;
+  deniedFileReads.clear();
   busy = operation;
   controls();
   try { await action(); }
@@ -731,7 +738,7 @@ async function refreshFiles(ids, check = null) {
   return Promise.all([...new Set(ids.filter(Boolean))].map(async id => {
     try {
       const result = await snapshot(id, fetchInSession, device.noteNames[id]);
-      if (session !== current || !device.fileIds.includes(id)) return;
+      if (session !== current || !device.fileIds.includes(id) || deniedFileReads.has(id)) return;
       if (check && (returnCheck !== check || device.activeId !== id)) return;
       if (Date.now() >= current.until) { expire(); return; }
       updateSources(result);
