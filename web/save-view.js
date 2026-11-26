@@ -46,7 +46,7 @@ export function patchView(raw, view, chart) {
   if (header.close === null) {
     const body = raw.slice(header.bom);
     // A malformed document opener is not a safe place for a second header.
-    if (/^(?:[ \t]+---[ \t]*(?:[\r\n]|$)|---[ \t]+#|%YAML(?:[ \t]|$))/.test(body)) throw new Error(unsafeHeader);
+    if (/^(?:[ \t]+---[ \t]*(?:[\r\n]|$)|---[ \t]+#|%(?:TAG|YAML)(?:[ \t]|$))/.test(body)) throw new Error(unsafeHeader);
     return raw.slice(0, header.bom) + ['---', ...missing, '---', ''].join(header.eol) + body;
   }
   if (missing.length) edits.push({from: header.close, to: header.close, value: missing.join(header.eol) + header.eol});

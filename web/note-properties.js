@@ -39,7 +39,7 @@ export function noteProperties(raw) {
   if (!opening) return {valid: true, values, spans, bom, eol, close: null};
   const lines = /([^\r\n]*)(\r\n|[\r\n]|$)/gy;
   lines.lastIndex = bom + opening[0].length;
-  let sequence = false;
+  let sequence = false, sequenceIndent = null;
   // Scan the header only. A malformed or duplicate field invalidates the
   // entire map, including earlier fields whose meaning may be ambiguous.
   try {
@@ -47,10 +47,15 @@ export function noteProperties(raw) {
       const start = lines.lastIndex;
       const [, line] = lines.exec(raw);
       if (/^(?:---|\.\.\.)[ \t]*$/.test(line)) return {valid: true, values, spans, bom, eol, close: start};
-      if (!line.trim() || /^[ \t]*#/.test(line)) continue;
       if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(line)) throw new Error();
-      const member = /^ *- +(.+)$/.exec(line);
-      if (member && sequence) { fieldValue(member[1]); continue; }
+      if (!line.trim() || /^[ \t]*#/.test(line)) continue;
+      const member = /^( *)- +(.+)$/.exec(line);
+      if (member && sequence) {
+        if (sequenceIndent !== null && sequenceIndent !== member[1].length) throw new Error();
+        sequenceIndent = member[1].length;
+        fieldValue(member[2]);
+        continue;
+      }
       const match = /^([^:#\s][^:#]*?)([ \t]*):([ \t]*)(.*)$/.exec(line);
       if (!match || (match[4] && !match[3])) throw new Error();
       const key = scalar(match[1]);
@@ -58,6 +63,7 @@ export function noteProperties(raw) {
           /^(?:true|false|null|yes|no|on|off)$/i.test(key)) throw new Error();
       const {token, value} = fieldValue(match[4]);
       sequence = token.length === 0;
+      sequenceIndent = null;
       values.set(key, value);
       const from = start + line.length - match[4].length;
       spans.set(key, {from, to: from + token.length, token});

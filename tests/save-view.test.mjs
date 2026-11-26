@@ -37,11 +37,13 @@ test('save chart configuration with quoted scalars and preserve it when switchin
 test('ambiguous and malformed frontmatter never gets rewritten', () => {
   for (const fields of ['myday_view: text\n"myday_view": plan', 'myday_view: |\n  list',
     'extra:\n  key: nested', 'aliases: &list a', '<<: *defaults', 'myday_view: [list]',
-    'tags: [one # not closed]', 'oops: "unclosed', 'tag: "\\q"', 'key:value', '  key: value']) {
+    'tags: [one # not closed]', 'oops: "unclosed', 'tag: "\\q"', 'key:value', '  key: value',
+    'tags:\n  - one\n - two', 'key\tinside: x', '# comment with NUL\0']) {
     assert.throws(() => patchView('---\n' + fields + '\n---\n- строка', 'plan'), /однозначно/);
   }
   assert.throws(() => patchView('---\nmyday_view: list\n', 'text'), /однозначно/);
   assert.throws(() => patchView('--- # comment\nmyday_view: text\n---', 'text'), /однозначно/);
+  assert.throws(() => patchView('%TAG !e! tag:example.com,2026:\n---\n# A', 'plan'), /однозначно/);
 });
 
 function fixture() {
