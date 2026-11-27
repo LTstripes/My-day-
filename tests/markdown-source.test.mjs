@@ -102,6 +102,35 @@ test('metadata changes, malformed UTF-8 and native documents fail closed on a ge
   for (const [file, error] of inputs) await assert.rejects(markdownSnapshot('chosen', file.request), error);
 });
 
+test('a version mismatch during readback retries only reading and keeps the original and one thought', async () => {
+  const original = '# My Day test\n\nИсходная строка.\n';
+  const draft = {fileId:'chosen', text:'Мысль из теста', op};
+  for (const stable of [true, false]) {
+    let content = original, writes = 0, readsAfterWrite = 0, metadataReads = 0;
+    const request = async (url, options) => {
+      const target = new URL(url);
+      if (options?.method === 'PATCH') {
+        writes++;
+        content = new TextDecoder().decode(options.body);
+        return new Response();
+      }
+      if (target.searchParams.has('alt')) {
+        if (writes) readsAfterWrite++;
+        return new Response(content);
+      }
+      const version = writes ? String(2 + (stable ? Math.min(metadataReads++, 1) : metadataReads++)) : '1';
+      return Response.json({id:'chosen',name:TEST_FILE,mimeType:'text/markdown',version,capabilities:{canEdit:true}});
+    };
+    const saved = saveDraft(draft, request, TEST_FILE);
+    if (stable) assert.equal((await saved).verified.content, content);
+    else await assert.rejects(saved, SnapshotVersionChanged);
+    assert.equal(writes, 1);
+    assert.equal(readsAfterWrite, 2);
+    assert.equal(content.startsWith(original), true);
+    assert.equal(content.split(draft.text).length, 2);
+  }
+});
+
 test('reading a template name in the generic reader does not bypass the template writer guard', async () => {
   const content = '---\nmyday_view: text\n---\n# My Day test\n';
   const generic = readFile(TEST_FILE, content);

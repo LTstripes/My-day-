@@ -1,6 +1,6 @@
 import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, TEST_FILE, writableNote} from './core.js?v=0.14.0';
 import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.15.0';
-import {driveError, markdownSnapshot, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.17.0';
+import {driveError, markdownSnapshot, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.18.1';
 import {initNoteReader} from './note-reader.js?v=0.18.0';
 import {saveAttention, saveView} from './save-view.js?v=0.18.0';
 import {attentionDate, initAttention} from './attention.js?v=0.18.0';
