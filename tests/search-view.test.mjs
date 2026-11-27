@@ -109,6 +109,77 @@ test('search checks only the picked files and opens the exact same-name source w
   assert.equal(state.patches, 0);
 });
 
+test('search scopes by selected ID and falls back to all files when that source is detached', async t => {
+  const {open, state} = await fixture(browser, t);
+  state.files.get('fixture-a').text += 'Маршрут у маяка.\n';
+  state.files.get('fixture-b').text += 'Маршрут в тихой бухте.\n';
+  const page = await open();
+  const scope = page.locator('#search-file');
+  const openReader = page.locator('#search-open-reader');
+  assert(await scope.isDisabled());
+  await firstFile(page, true);
+  await pickFile(page, 'fixture-b');
+  const profile = await saved(page);
+
+  assert.equal(await scope.inputValue(), '');
+  assert.match(await scope.locator('option[value="fixture-a"]').textContent(), /ID fixture-a/);
+  assert.match(await scope.locator('option[value="fixture-b"]').textContent(), /ID fixture-b/);
+  await scope.selectOption('fixture-b');
+  const reads = state.mediaReads.length;
+  const requests = [];
+  page.on('request', request => {
+    const url = new URL(request.url());
+    if (url.hostname === 'www.googleapis.com') requests.push(url.pathname.split('/').at(-1));
+  });
+  await search(page, 'Маршрут');
+  const result = resultFor(page, 'fixture-b').locator('[data-hit]');
+  await waitText(result, 'тихой бухте');
+  assert.deepEqual(state.mediaReads.slice(reads), ['fixture-b']);
+  assert.deepEqual([...new Set(requests)], ['fixture-b']);
+  assert.equal(await resultFor(page, 'fixture-a').count(), 0);
+  assert.deepEqual(await saved(page), profile);
+
+  await result.click();
+  assert(await openReader.isVisible());
+  assert(await openReader.isEnabled());
+  await page.locator('#source-manager').evaluate(details => { details.open = true; });
+  await page.locator('#source-select').selectOption('fixture-b');
+  await page.locator('#source-remove').click();
+  await notice(page, 'убран из списка источников My Day');
+  assert.equal(await scope.inputValue(), '');
+  assert.equal(await scope.locator('option[value="fixture-b"]').count(), 0);
+  assert(await openReader.isHidden());
+  assert(await openReader.isDisabled());
+  assert.doesNotMatch(await page.locator('#search').textContent(), /тихой бухте/);
+  await page.locator('#search-submit').click();
+  await waitText(resultFor(page, 'fixture-a'), 'у маяка');
+  assert.equal(await resultFor(page, 'fixture-b').count(), 0);
+  assert.equal(state.patches, 0);
+});
+
+test('changing the search scope drops a pending result without losing the query', async t => {
+  const {ctx, open, state} = await fixture(browser, t);
+  state.files.get('fixture-a').text += 'Маршрут у маяка.\n';
+  state.files.get('fixture-b').text += 'Маршрут в тихой бухте.\n';
+  const page = await open();
+  await firstFile(page, true);
+  await pickFile(page, 'fixture-b');
+  const scope = page.locator('#search-file'), query = page.locator('#search-query');
+  await scope.selectOption('fixture-a');
+  await query.fill('Маршрут');
+  const release = await holdNextSearch(ctx, page, 'fixture-a');
+  try { await scope.selectOption('fixture-b'); }
+  finally { release(); }
+  await page.waitForLoadState('networkidle');
+  assert.equal(await query.inputValue(), 'Маршрут');
+  assert.equal(await page.locator('#search-results [data-hit]').count(), 0);
+
+  await page.locator('#search-submit').click();
+  await waitText(resultFor(page, 'fixture-b'), 'тихой бухте');
+  assert.equal(await resultFor(page, 'fixture-a').count(), 0);
+  assert.equal(state.patches, 0);
+});
+
 test('preview and search detail hide record markers while keeping the note and source positions', async t => {
   const {open, state} = await fixture(browser, t, {viewport: {width: 360, height: 760}});
   const id = 'decafbad-aaaa-4bbb-8ccc-123456789abc';

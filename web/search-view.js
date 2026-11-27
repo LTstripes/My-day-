@@ -11,25 +11,45 @@ function element(tag, text, className) {
   return node;
 }
 
-export function initNoteSearch({run, read, onError}) {
+export function initNoteSearch({run, read, onError, openInReader}) {
   const input = $('search-query'), results = $('search-results'), detail = $('search-detail');
-  const status = $('search-status');
-  let files = [], online = false, locked = false, job = null, opener = null;
+  const scope = $('search-file'), openReader = $('search-open-reader'), status = $('search-status');
+  let files = [], online = false, locked = false, job = null, opener = null, readerTarget = null;
+
+  function sameName(file) {
+    return files.some(other => other.name === file.name && other.id !== file.id);
+  }
+  function listScopes() {
+    const selected = scope.value;
+    scope.replaceChildren(new Option('Все выбранные файлы', ''));
+    for (const file of files) {
+      const label = sameName(file) ? file.name + ' · ID ' + file.id : file.name;
+      scope.add(new Option(label, file.id));
+    }
+    scope.value = files.some(file => file.id === selected) ? selected : '';
+  }
 
   function hint() {
     if (!online) return 'Для поиска подключи Google Drive.';
     if (!files.length) return 'Сначала выбери файл в разделе «Мои заметки» или «Планы».';
-    return 'Поиск перечитает выбранные заметки и планы из Drive.';
+    return scope.value ? 'Поиск перечитает выбранный файл из Drive.' : 'Поиск перечитает выбранные заметки и планы из Drive.';
+  }
+  function readerControls() {
+    openReader.hidden = !readerTarget;
+    openReader.disabled = !readerTarget || !online || locked;
   }
   function controls() {
-    input.disabled = !online || !files.length;
+    input.disabled = scope.disabled = !online || !files.length;
     $('search-submit').disabled = input.disabled || locked || !input.value.trim();
     $('search-clear').hidden = !input.value;
+    readerControls();
     if (!job) status.textContent = hint();
   }
   function closeDetail(refocus = false) {
     const previous = opener;
     opener = null;
+    readerTarget = null;
+    readerControls();
     detail.hidden = true;
     delete detail.dataset.fileId;
     $('search-text').replaceChildren();
@@ -51,6 +71,8 @@ export function initNoteSearch({run, read, onError}) {
     results.hidden = true;
     detail.hidden = false;
     detail.dataset.fileId = row.id;
+    readerTarget = {id: row.id, name: row.name, version: row.version, query: job.query, offset: hit?.start ?? null};
+    readerControls();
     $('search-detail-title').textContent = row.name;
     const position = hit ? 'Строка ' + hit.line + ' · ' : '';
     $('search-position').textContent = position + 'Только чтение · ' + row.readAt;
@@ -74,7 +96,7 @@ export function initNoteSearch({run, read, onError}) {
     const card = element('article', '', 'search-group');
     card.dataset.fileId = row.id;
     card.append(element('h3', row.name));
-    if (files.some(file => file.name === row.name && file.id !== row.id)) {
+    if (sameName(row)) {
       card.append(element('small', 'ID ' + row.id, 'search-id'));
     }
     if (row.error) {
@@ -120,19 +142,22 @@ export function initNoteSearch({run, read, onError}) {
     results.replaceChildren(...found.map(row => group(row)), ...failures.map(row => group(row)));
     let summary = found.length ? 'Файлов с совпадениями — ' + found.length + '.' : 'Совпадений нет.';
     if (failures.length) {
-      summary = 'Не удалось проверить все файлы. Прочитано ' + (rows.length - failures.length) + ' из ' + rows.length + '.' +
+      summary = scope.value ? 'Не удалось прочитать выбранный файл.' :
+        'Не удалось проверить все файлы. Прочитано ' + (rows.length - failures.length) + ' из ' + rows.length + '.' +
         (found.length ? ' ' + summary : '');
     }
     status.textContent = summary;
   }
   async function search() {
     const query = input.value.trim();
-    if (!query || !online || !files.length) return;
+    const selected = scope.value;
+    const sources = selected ? files.filter(file => file.id === selected) : files;
+    if (!query || !online || !sources.length) return;
     reset(false);
-    const current = {query, controller: new AbortController(), rows: files.map(file => ({...file})), done: false};
+    const current = {query, controller: new AbortController(), rows: sources.map(file => ({...file})), done: false};
     job = current;
     let checked = 0;
-    status.textContent = 'Читаем выбранные файлы из Drive…';
+    status.textContent = selected ? 'Читаем выбранный файл из Drive…' : 'Читаем выбранные файлы из Drive…';
     async function check(row) {
       let result;
       if (!row.error) {
@@ -177,22 +202,33 @@ export function initNoteSearch({run, read, onError}) {
     if (!$('search-submit').disabled) run(search);
   };
   input.oninput = () => reset(false);
+  scope.onchange = () => reset(false);
   $('search-clear').onclick = () => { reset(); input.focus(); };
   $('search-back').onclick = () => closeDetail(true);
+  openReader.onclick = () => {
+    const target = readerTarget;
+    if (target && !openReader.disabled) {
+      openInReader({...target, origin: () => readerTarget === target ? openReader : null});
+    }
+  };
 
+  listScopes();
   return {
     reset,
     setControls(connected, busy) {
       const ended = online && !connected;
       online = connected;
       locked = busy;
-      if (ended) reset();
-      else controls();
+      if (ended) {
+        scope.value = '';
+        reset();
+      } else controls();
     },
     setFiles(next) {
       if (next.length === files.length && next.every(({id, name, note, plan}, i) =>
         files[i].id === id && files[i].name === name && files[i].note === note && files[i].plan === plan)) return;
       files = next;
+      listScopes();
       reset(false);
     },
     changed(meta) { invalidate(meta.id, 'Файл обновился. Нажми «Найти» ещё раз.', meta.version); },
