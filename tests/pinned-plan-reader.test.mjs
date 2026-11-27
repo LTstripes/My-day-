@@ -89,6 +89,13 @@ test('Today opens the preferred focus and task source, keeps drafts, and remembe
   assert.deepEqual(after.notes,drafts.notes);
   assert.deepEqual(after.draft,drafts.draft);
   assert.deepEqual(after.taskDraft,drafts.taskDraft);
+  state.files.get('tasks').refusal = {status:403,reason:'insufficientFilePermissions'};
+  await keyboardOpen(page,tasks);
+  await page.locator('#reader-state.error').waitFor();
+  assert.equal(await page.locator('#reader-display').isHidden(),true);
+  assert.equal(await page.locator('#reader-content').textContent(),'');
+  await page.locator('#reader-back').click();
+  assert.equal(await page.locator(tasks).evaluate(el => el === document.activeElement),true);
   assert.equal(state.patches,0);
 });
 
