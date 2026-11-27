@@ -1,5 +1,6 @@
 import {noteView} from './note-views.js?v=0.16.0';
 import {mountChart} from './note-chart.js?v=0.16.0';
+import {initNoteFind} from './note-find.js?v=0.25.0';
 
 const $ = id => document.getElementById(id);
 const make = (tag, text) => {
@@ -11,6 +12,7 @@ const make = (tag, text) => {
 export function initNoteReader(onSelectionChange = () => {}) {
   const select = $('reader-select'), view = $('reader-view'), content = $('reader-content');
   const state = $('reader-state'), link = $('reader-link');
+  const find = initNoteFind();
   let sourceId = null, sourceName = '', defaultView = 'text', override = null, current = null;
   let chartDraft = null, validChart = null;
 
@@ -60,6 +62,7 @@ export function initNoteReader(onSelectionChange = () => {}) {
   }
   function clear(message = '', error = false) {
     current = null;
+    find.setFile(null);
     render();
     state.textContent = message || (sourceId ? 'Подключи Drive, чтобы прочитать заметку.' : '');
     state.classList.toggle('error', error);
@@ -85,6 +88,12 @@ export function initNoteReader(onSelectionChange = () => {}) {
   $('reader-full').onclick = () => { override = 'text'; render(); view.focus(); };
   return {
     setFiles, clear,
+    loading(id) {
+      const message = 'Читаем заметку из Drive…';
+      if (id !== sourceId || !current || !find.isOpen()) { clear(message); return; }
+      state.textContent = message;
+      state.classList.remove('error');
+    },
     opened() { return current; },
     selection() {
       if (!current || (view.value === 'chart' && !validChart)) return null;
@@ -101,6 +110,7 @@ export function initNoteReader(onSelectionChange = () => {}) {
         if (!override) chartDraft = null;
       }
       current = result;
+      find.setFile(result);
       render();
       state.textContent = 'Прочитано из Drive · ' + new Date().toLocaleString('ru-RU');
       state.classList.remove('error');

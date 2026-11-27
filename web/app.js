@@ -2,7 +2,7 @@ import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, 
 import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.22.0';
 import {driveError, markdownSnapshot, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.18.1';
 import {initReturnLink} from './return-link.js?v=0.20.0';
-import {initNoteReader} from './note-reader.js?v=0.18.0';
+import {initNoteReader} from './note-reader.js?v=0.25.0';
 import {saveAttention, saveView} from './save-view.js?v=0.18.0';
 import {attentionDate, initAttention} from './attention.js?v=0.23.0';
 import {addTask, completeTask, reopenTask} from './complete-task.js?v=0.23.0';
@@ -532,7 +532,7 @@ async function readReader(id = device.readerId, selecting = false, expectedName)
   const current = session, attempt = {};
   const known = sourcesFor(device).get(id);
   readerAttempt = attempt;
-  reader.clear('Читаем заметку из Drive…');
+  reader.loading(id);
   const valid = () => current === session && readerAttempt === attempt &&
     (!known || sourcesFor(device).get(id)?.name === known.name);
   try {
