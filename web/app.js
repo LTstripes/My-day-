@@ -1,9 +1,10 @@
 import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, TEST_FILE, writableNote} from './core.js?v=0.14.0';
-import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.15.0';
+import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.21.0';
 import {driveError, markdownSnapshot, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.18.1';
+import {initReturnLink} from './return-link.js?v=0.20.0';
 import {initNoteReader} from './note-reader.js?v=0.18.0';
 import {saveAttention, saveView} from './save-view.js?v=0.18.0';
-import {attentionDate, initAttention} from './attention.js?v=0.18.0';
+import {attentionDate, initAttention} from './attention.js?v=0.21.0';
 import {addTask, completeTask} from './complete-task.js?v=0.16.0';
 import {firstPlanAction, insertTask} from './today.js?v=0.16.0';
 import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.17.0';
@@ -34,6 +35,7 @@ const planCards = new Map();
 let resuming = false;
 const attention = initAttention($('today-attention'), openAttentionNote);
 const reader = initNoteReader(readerSelectionChanged);
+const readerReturn = initReturnLink($('reader-back'));
 let readerAttempt = null;
 // A single action may read the same ID through several roles. A Drive access
 // refusal invalidates every response for that ID until a new action starts.
@@ -340,7 +342,7 @@ function renderPlans() {
   const isPinned = Boolean(pinned && pinned.id === device.plan?.id);
   $('plan-pin').hidden = !device.plan;
   $('plan-pin').setAttribute('aria-pressed', String(isPinned));
-  $('plan-pin').textContent = isPinned ? 'Открепить от «Сегодня»' : 'Закрепить на сегодня';
+  $('plan-pin').textContent = isPinned ? 'Открепить от «Сегодня»' : 'Закрепить на экране «Сегодня»';
 }
 function listPlans() {
   const select = $('plan-select');
@@ -447,7 +449,7 @@ async function readReader(id = device.readerId, selecting = false, expectedName)
   const valid = () => current === session && readerAttempt === attempt &&
     (!known || sourcesFor(device).get(id)?.name === known.name);
   try {
-    const result = await markdownSnapshot(id, sessionRequest(current), selecting ? expectedName : known?.name);
+    const result = await markdownSnapshot(id, sessionRequest(current), expectedName ?? (selecting ? undefined : known?.name));
     if (!valid() || deniedFileReads.has(id)) return;
     if (Date.now() >= current.until) { expire(); return; }
     if (!navigator.onLine || networkChanged) { reader.clear('Связь прервалась. Повтори чтение заметки.', true); return; }
@@ -582,7 +584,8 @@ function renderAttentionEditor() {
 function updateAttentionButtons() {
   const opened = reader.opened();
   const input = $('reader-attention-date');
-  const reason = opened?.meta.name === TEST_FILE ? 'Для даты внимания выбери обычную заметку Markdown.' :
+  const reason = opened && !readerNote(opened.meta.id, opened.meta.name) ? 'Дата внимания доступна для файла, выбранного в «Моих заметках».' :
+    opened?.meta.name === TEST_FILE ? 'Для даты внимания выбери обычную заметку Markdown.' :
     opened && !opened.meta.capabilities?.canEdit ? 'Для изменения даты нужен доступ на редактирование.' : '';
   const locked = busy || !session || Date.now() >= session.until || !navigator.onLine || storageFault || !opened || reason;
   input.disabled = Boolean(locked);
@@ -600,7 +603,8 @@ function readerSelectionChanged() {
 function updateViewSaveButton() {
   const selected = reader.selection();
   const locked = busy || !session || Date.now() >= session.until || !navigator.onLine || storageFault;
-  const reason = selected?.name === TEST_FILE ? 'Для тестового шаблона доступно только временное переключение вида.' :
+  const reason = selected && !readerNote(selected.fileId, selected.name) ? 'Для этого плана вид переключается только на экране.' :
+    selected?.name === TEST_FILE ? 'Для тестового шаблона доступно только временное переключение вида.' :
     selected && !selected.canEdit ? 'Для сохранения вида нужен доступ на редактирование.' : '';
   $('reader-save').disabled = Boolean(locked || !selected || reason);
   $('reader-save-hint').textContent = reason;
@@ -639,6 +643,7 @@ function controls() {
   $('plan-pick').disabled = $('pick').disabled || !navigator.onLine;
   $('reader-pick').disabled = $('plan-pick').disabled || storageFault;
   $('reader-select').disabled = locked || !connected || !navigator.onLine || storageFault;
+  $('today-plan-open').disabled = $('reader-select').disabled || !device.pinnedPlanId;
   $('reader-refresh').hidden = !device.readerId;
   $('reader-refresh').disabled = locked || !connected || !navigator.onLine;
   $('plan-refresh').disabled = locked || !connected || !device.plan || !navigator.onLine;
@@ -981,6 +986,7 @@ $('connect').onclick = () => {
   catch (error) { awaitingLogin = false; fail(error); controls(); }
 };
 function resetTab() {
+  readerReturn.clear();
   awaitingLogin = false;
   endSession();
   device = newDevice();
@@ -1089,7 +1095,7 @@ function chooseFile(expectedName, purpose = 'note') {
         if (action === google.picker.Action.CANCEL) return;
         const id = data[google.picker.Response.DOCUMENTS]?.[0]?.[google.picker.Document.ID];
         if (!validId(id)) { status('Google не вернул ID файла.', true); return; }
-        if (purpose === 'reader') { run(() => readReader(id, true), 'reader'); return; }
+        if (purpose === 'reader') { readerReturn.clear(); run(() => readReader(id, true), 'reader'); return; }
         if (purpose === 'plan') { run(() => readPlan(id, true), 'plan'); return; }
         const forDay = expectedName === NOW || expectedName === TASKS;
         if (!forDay && device.draft && device.draft.fileId !== id) {
@@ -1157,23 +1163,50 @@ $('pick').onclick = () => chooseFile();
 $('reader-pick').onclick = () => chooseFile(undefined, 'reader');
 $('reader-select').onchange = () => {
   const id = $('reader-select').value;
-  if (id) run(() => readReader(id, true, sourcesFor(device).get(id)?.name), 'reader');
+  if (id) {
+    readerReturn.clear();
+    run(() => readReader(id, true, sourcesFor(device).get(id)?.name), 'reader');
+  }
   else $('reader-select').value = device.readerId ?? '';
 };
 $('reader-refresh').onclick = () => run(() => readReader(), 'reader');
-function openAttentionNote(id) {
-  const note = device.notes?.find(item => item.id === id);
-  if (!note || $('reader-select').disabled) return;
+function readerNote(id, name) {
+  return device.notes?.some(note => note.id === id && note.name === name);
+}
+function openTodayReader(source, origin) {
+  if (!source || $('reader-select').disabled) return;
+  readerReturn.remember(origin, $('today-title'));
   if (location.hash !== '#note-reader') history.pushState(null, '', '#note-reader');
   const title = $('reader-title');
   title.focus({preventScroll: true});
   title.scrollIntoView({block: 'start'});
-  run(() => readReader(id, device.readerId !== id, note.name), 'reader');
+  // Select only the reader ID. Opening a plan here never adds it to the editable note sources.
+  if (device.readerId !== source.id) {
+    const previous = device;
+    device = {...device, readerId: source.id};
+    if (!persist()) {
+      device = previous;
+      reader.clear('Не удалось сохранить выбор файла. Проверь настройки подключения.', true);
+      return;
+    }
+    syncSearchFiles();
+  }
+  run(() => readReader(source.id, false, source.name), 'reader');
 }
+$('today-plan-open').onclick = () => {
+  const id = device.pinnedPlanId;
+  openTodayReader(device.plans?.find(plan => plan.id === id),
+    () => device.pinnedPlanId === id ? $('today-plan-open') : null);
+};
+function openAttentionNote(id) {
+  openTodayReader(device.notes?.find(note => note.id === id),
+    () => $('today-attention').querySelector('button[data-file-id="' + CSS.escape(id) + '"]'));
+}
+$('reader-back').addEventListener('click', () => history.replaceState(null, '', '#today'));
 function saveNoteProperty(selected, operation, resultLine, write, messageForResult) {
   const current = session;
   const matches = () => session === current && !storageFault && navigator.onLine && !networkChanged &&
-    device.readerId === selected.fileId && device.notes?.some(note => note.id === selected.fileId && note.name === selected.name);
+    device.readerId === selected.fileId && readerNote(selected.fileId, selected.name);
   run(async () => {
     const setMessage = (message, error = false) => {
       resultLine.textContent = message;

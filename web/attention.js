@@ -83,6 +83,7 @@ export function initAttention(panel, onOpen) {
         const open = document.createElement('button');
         open.type = 'button';
         open.className = 'secondary';
+        open.dataset.fileId = id;
         open.textContent = 'Открыть в заметках';
         open.setAttribute('aria-label', 'Открыть в заметках: ' + name);
         open.onclick = () => onOpen(id);
