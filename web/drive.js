@@ -106,7 +106,11 @@ export async function saveDraft(draft, request, expectedName) {
       method: 'PATCH', headers: {'Content-Type': current.meta.mimeType || 'text/markdown; charset=UTF-8'}, body: bytes
     });
   }
-  const verified = await snapshot(draft.fileId, request, expectedName);
+  const readBack = () => snapshot(draft.fileId, request, expectedName);
+  const verified = await readBack().catch(error => {
+    if (error instanceof SnapshotVersionChanged) return readBack();
+    throw error;
+  });
   if (recordDelivery(verified.content, draft) !== 'delivered' ||
       (!next.already && !lfText(verified.content).startsWith(lfText(current.content)))) {
     throw new Error('Не удалось подтвердить исходный текст и запись. Проверь файл перед повтором.');
