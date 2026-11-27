@@ -190,25 +190,35 @@ function validTask(draft) {
     typeof draft.op === 'string' && /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(draft.op);
 }
 
-export function taskDelivery(markdown, draft) {
-  if (!validTask(draft)) return 'conflict';
+export function taskRecord(markdown, operation) {
   // Even an ID left behind in a damaged comment requires manual review.
-  const op = draft.op.toLowerCase();
+  const op = operation.toLowerCase();
   const source = markdown.toLowerCase();
   const reference = source.indexOf(op);
-  if (reference === -1) return 'missing';
-  if (source.indexOf(op, reference + op.length) !== -1) return 'conflict';
-  const lines = markdown.split(/\r\n?|\n/);
+  if (reference === -1) return {state: 'missing'};
+  if (source.indexOf(op, reference + op.length) !== -1) return {state: 'conflict'};
   try {
     for (const {lineIndex, taskOp} of contentLines(markdown, true)) {
-      if (taskOp && taskOp.toLowerCase() === op) {
-        // A completed task still belongs to the same operation.
-        const next = /^- \[[ xX]\] (.+)$/.exec(lines[lineIndex + 1] ?? '');
-        return next?.[1] === draft.text ? 'delivered' : 'conflict';
+      if (!taskOp || taskOp.toLowerCase() !== op) continue;
+      // A completed task still belongs to the same operation.
+      const lines = markdown.split(/(\r\n|[\r\n])/);
+      const index = (lineIndex + 1) * 2;
+      const next = /^- \[[ xX]\] (.+)$/.exec(lines[index] ?? '');
+      if (next) {
+        const start = lines.slice(0, index).join('').length;
+        return {state: 'found', text: next[1], range: {start, end: start + next[0].length}};
       }
+      break;
     }
   } catch { /* An operation inside malformed frontmatter is not confirmed. */ }
-  return 'conflict';
+  return {state: 'conflict'};
+}
+
+export function taskDelivery(markdown, draft) {
+  if (!validTask(draft)) return 'conflict';
+  const record = taskRecord(markdown, draft.op);
+  if (record.state === 'found') return record.text === draft.text ? 'delivered' : 'conflict';
+  return record.state;
 }
 
 export function insertTask(markdown, draft) {

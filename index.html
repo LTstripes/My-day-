@@ -40,6 +40,10 @@ details{margin:14px 0}summary{cursor:pointer;color:var(--accent);width:fit-conte
 #today-capture-slot #capture { padding:0; margin:0; border:0; }
 #today-capture-slot #capture h2 { font-size:1rem; }
 #today-capture-close { margin-top:8px; }
+#today-capture-slot [data-receipt] { display:none; }
+[data-receipt] { margin-top:10px; }
+#receipt-detail { margin-top:12px; min-width:0; }
+#receipt-detail mark { background:#ffe389; color:#231e14; }
 #today-capture-close, #task-entry summary { min-height:44px; }
 #task-entry { margin:6px 0 0; }
 #task-entry summary { padding:10px 0; font-weight:600; }
@@ -69,15 +73,16 @@ footer { margin-top:20px; font-size:.85rem; }
   #today .day-head button { padding:8px 12px; }
 }
 </style>
-<script type="module" src="./web/app.js?v=0.19.0"></script>
+<script type="module" src="./web/app.js?v=0.20.0"></script>
 </head><body><main>
-<header class="masthead"><div><small>My Day · 0.19.0</small><h1>Мой день</h1></div><details class="page-menu" id="page-menu" open><summary>Разделы</summary><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a></nav></details></header>
+<header class="masthead"><div><small>My Day · 0.20.0</small><h1>Мой день</h1></div><details class="page-menu" id="page-menu" open><summary>Разделы</summary><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a></nav></details></header>
 <div class="connection-bar"><div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div><button id="connect" disabled>Подключить Google Drive</button></div>
 <section id="today" aria-labelledby="today-title">
   <div class="day-head"><div><p class="day-date muted"><time id="today-date"></time><span class="visually-hidden"> · <span id="today-zone"></span></span></p><h2 id="today-title">Сегодня</h2></div>
     <div class="actions"><button id="today-capture" aria-controls="today-capture-slot" aria-expanded="false" disabled>Записать мысль</button><button id="today-refresh" class="secondary" disabled>Обновить обзор</button><button id="today-handoff" class="secondary" aria-controls="handoff-queue" hidden>К помощнику</button></div>
   </div>
   <div id="today-capture-slot" hidden><button id="today-capture-close" class="secondary" type="button">Свернуть</button></div>
+  <div data-receipt="thought" hidden><p class="meta" role="status"></p><button type="button" class="secondary" aria-controls="receipt-detail">Открыть запись</button></div>
   <div class="day-grid">
     <article id="today-context" class="day-card"><div class="source-head"><h3>Текущий фокус</h3></div>
       <div data-body class="day-body"></div><p data-state class="meta muted source-state" role="status"></p>
@@ -94,6 +99,7 @@ footer { margin-top:20px; font-size:.85rem; }
         <p id="task-status" class="meta muted" role="status"></p>
       </form>
       </details>
+      <div data-receipt="task" hidden><p class="meta" role="status"></p><button type="button" class="secondary" aria-controls="receipt-detail">Открыть запись</button></div>
       <div class="source-foot"><button type="button" data-day-pick="To Do now.md" disabled>Выбрать To Do now.md</button><a data-open hidden target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>
     </article>
     <article id="today-attention" class="day-card" hidden><h3>Требуют внимания</h3><ul></ul><p role="status" class="meta muted"></p></article>
@@ -185,12 +191,16 @@ footer { margin-top:20px; font-size:.85rem; }
 </section>
 <div id="notes" class="grid">
   <button id="library-capture-back" class="secondary" type="button" hidden>Вернуть редактор в «Мои заметки»</button>
-  <section id="capture"><h2>Добавить мысль</h2><label id="target" for="thought">Текст мысли</label><textarea id="thought" autocomplete="off" maxlength="3000" disabled></textarea><div class="actions"><button id="save" disabled>Добавить в Drive</button><button id="discard" class="secondary" disabled>Очистить черновик</button></div><p id="draft" class="muted meta">Черновика нет.</p></section>
+  <section id="capture"><h2>Добавить мысль</h2><label id="target" for="thought">Текст мысли</label><textarea id="thought" autocomplete="off" maxlength="3000" disabled></textarea><div class="actions"><button id="save" disabled>Добавить в Drive</button><button id="discard" class="secondary" disabled>Очистить черновик</button></div><p id="draft" class="muted meta">Черновика нет.</p><div data-receipt="thought" hidden><p class="meta" role="status"></p><button type="button" class="secondary" aria-controls="receipt-detail">Открыть запись</button></div></section>
   <section><h2 id="preview-title">Содержимое файла</h2><p id="fresh" class="muted meta">Файл ещё не прочитан.</p>
     <pre id="preview" aria-labelledby="preview-title">Здесь появится текст из Drive.</pre>
     <button id="handoff-back" class="secondary" type="button" aria-controls="handoff-queue" hidden>К очереди мыслей</button>
   </section>
 </div>
+<section id="receipt-detail" aria-labelledby="receipt-heading" hidden>
+  <h2 id="receipt-heading"></h2><p role="status" tabindex="-1"></p><pre hidden></pre>
+  <div class="source-foot"><button type="button" class="secondary" hidden>Вернуться к подтверждению</button><a target="_blank" rel="noopener noreferrer">Открыть исходный файл в Drive</a></div>
+</section>
 <section id="handoff-queue" aria-labelledby="handoff-title" hidden>
   <div class="source-head"><h2 id="handoff-title">Помощник</h2><span id="handoff-source" class="meta muted"></span></div>
   <p id="handoff-counts" class="meta" role="status"></p>
