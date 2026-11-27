@@ -1,4 +1,5 @@
 import {noteProperties} from './note-properties.js?v=0.16.0';
+import {TEST_FILE} from './core.js?v=0.14.0';
 
 const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
 const timestamp = /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
@@ -47,6 +48,17 @@ export function initAttention(panel, onOpen) {
   let sources = new Map(), timer;
   const dates = new Map(), failed = new Set(), pending = new Map();
 
+  function actionButton(id, label, reschedule = false) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'secondary';
+    button.dataset[reschedule ? 'rescheduleId' : 'fileId'] = id;
+    button.textContent = label;
+    button.setAttribute('aria-label', label + ': ' + sources.get(id));
+    button.onclick = () => onOpen(id, reschedule);
+    return button;
+  }
+
   function render() {
     clearTimeout(timer);
     const now = new Date();
@@ -80,14 +92,8 @@ export function initAttention(panel, onOpen) {
           minute: '2-digit', second: '2-digit', timeZoneName: 'short'});
       item.append(status + ' · ', time, ' · ', link);
       if (onOpen) {
-        const open = document.createElement('button');
-        open.type = 'button';
-        open.className = 'secondary';
-        open.dataset.fileId = id;
-        open.textContent = 'Открыть в заметках';
-        open.setAttribute('aria-label', 'Открыть в заметках: ' + name);
-        open.onclick = () => onOpen(id);
-        item.append(' ', open);
+        item.append(' ', actionButton(id, 'Открыть в заметках'));
+        if (date.canEdit) item.append(' ', actionButton(id, 'Перенести', true));
       }
       list.append(item);
     }
@@ -117,7 +123,7 @@ export function initAttention(panel, onOpen) {
     if (sources.get(meta.id) !== meta.name) return;
     forget(meta.id);
     const date = attentionDate(content);
-    if (date) dates.set(meta.id, date);
+    if (date) dates.set(meta.id, {...date, canEdit: meta.capabilities?.canEdit === true && meta.name !== TEST_FILE});
     render();
   }
   function unavailable(id) {

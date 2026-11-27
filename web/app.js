@@ -4,7 +4,7 @@ import {driveError, markdownSnapshot, planSnapshot, saveDraft, snapshot} from '.
 import {initReturnLink} from './return-link.js?v=0.20.0';
 import {initNoteReader} from './note-reader.js?v=0.18.0';
 import {saveAttention, saveView} from './save-view.js?v=0.18.0';
-import {attentionDate, initAttention} from './attention.js?v=0.21.0';
+import {attentionDate, initAttention} from './attention.js?v=0.23.0';
 import {addTask, completeTask} from './complete-task.js?v=0.16.0';
 import {firstPlanAction, insertTask} from './today.js?v=0.16.0';
 import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.22.0';
@@ -468,6 +468,7 @@ async function readReader(id = device.readerId, selecting = false, expectedName)
     }
     showReaderAndAttention(result);
     search.changed(result.meta);
+    return true;
   } catch (error) {
     if (!valid()) return;
     if (error.access === 'expired' || error.access === 'consent') { fail(error); return; }
@@ -1196,7 +1197,7 @@ function openTodayReader(source, origin) {
     }
     syncSearchFiles();
   }
-  run(() => readReader(source.id, false, source.name), 'reader');
+  return run(() => readReader(source.id, false, source.name), 'reader');
 }
 $('today-plan-open').onclick = () => {
   const id = device.pinnedPlanId;
@@ -1210,9 +1211,16 @@ for (const button of dayReaderButtons) {
     if (id) openTodayReader({id, name}, () => preferredFile(device, name) === id ? button : null);
   };
 }
-function openAttentionNote(id) {
-  openTodayReader(device.notes?.find(note => note.id === id),
-    () => $('today-attention').querySelector('button[data-file-id="' + CSS.escape(id) + '"]'));
+async function openAttentionNote(id, reschedule = false) {
+  const attribute = reschedule ? 'data-reschedule-id' : 'data-file-id';
+  const opened = await openTodayReader(device.notes?.find(note => note.id === id),
+    () => $('today-attention').querySelector('button[' + attribute + '="' + CSS.escape(id) + '"]'));
+  if (!reschedule || !opened || reader.opened()?.meta.id !== id || document.activeElement !== $('reader-title') ||
+      $('reader-back').hidden || location.hash !== '#note-reader') return;
+  const editor = $('reader-attention');
+  const input = $('reader-attention-date');
+  editor.open = true;
+  (input.disabled ? editor.querySelector('summary') : input).focus();
 }
 $('reader-back').addEventListener('click', () => history.replaceState(null, '', '#today'));
 function saveNoteProperty(selected, operation, resultLine, write, messageForResult) {
