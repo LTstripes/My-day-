@@ -4,10 +4,10 @@ import {driveError, markdownSnapshot, planSnapshot, saveDraft, snapshot} from '.
 import {initReturnLink} from './return-link.js?v=0.20.0';
 import {initNoteReader} from './note-reader.js?v=0.18.0';
 import {saveAttention, saveView} from './save-view.js?v=0.18.0';
-import {attentionDate, initAttention} from './attention.js?v=0.21.0';
-import {addTask, completeTask} from './complete-task.js?v=0.16.0';
+import {attentionDate, initAttention} from './attention.js?v=0.23.0';
+import {addTask, completeTask, reopenTask} from './complete-task.js?v=0.23.0';
 import {firstPlanAction, insertTask} from './today.js?v=0.16.0';
-import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.22.0';
+import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.23.0';
 import {initTaskEntry} from './task-entry.js?v=0.19.0';
 import {initNoteSearch} from './search-view.js?v=0.14.0';
 import {buildHandoffHistory} from './handoff.js?v=0.15.0';
@@ -468,6 +468,7 @@ async function readReader(id = device.readerId, selecting = false, expectedName)
     }
     showReaderAndAttention(result);
     search.changed(result.meta);
+    return true;
   } catch (error) {
     if (!valid()) return;
     if (error.access === 'expired' || error.access === 'consent') { fail(error); return; }
@@ -1196,7 +1197,7 @@ function openTodayReader(source, origin) {
     }
     syncSearchFiles();
   }
-  run(() => readReader(source.id, false, source.name), 'reader');
+  return run(() => readReader(source.id, false, source.name), 'reader');
 }
 $('today-plan-open').onclick = () => {
   const id = device.pinnedPlanId;
@@ -1210,9 +1211,16 @@ for (const button of dayReaderButtons) {
     if (id) openTodayReader({id, name}, () => preferredFile(device, name) === id ? button : null);
   };
 }
-function openAttentionNote(id) {
-  openTodayReader(device.notes?.find(note => note.id === id),
-    () => $('today-attention').querySelector('button[data-file-id="' + CSS.escape(id) + '"]'));
+async function openAttentionNote(id, reschedule = false) {
+  const attribute = reschedule ? 'data-reschedule-id' : 'data-file-id';
+  const opened = await openTodayReader(device.notes?.find(note => note.id === id),
+    () => $('today-attention').querySelector('button[' + attribute + '="' + CSS.escape(id) + '"]'));
+  if (!reschedule || !opened || reader.opened()?.meta.id !== id || document.activeElement !== $('reader-title') ||
+      $('reader-back').hidden || location.hash !== '#note-reader') return;
+  const editor = $('reader-attention');
+  const input = $('reader-attention-date');
+  editor.open = true;
+  (input.disabled ? editor.querySelector('summary') : input).focus();
 }
 $('reader-back').addEventListener('click', () => history.replaceState(null, '', '#today'));
 function saveNoteProperty(selected, operation, resultLine, write, messageForResult) {
@@ -1414,7 +1422,7 @@ function submitTask(place) {
     }
   }, 'add-task');
 }
-onTaskCompletion(target => run(async () => {
+onTaskCompletion((target, reopen) => run(async () => {
   const current = session;
   const {fileId, date} = target;
   updateDayDate();
@@ -1423,16 +1431,19 @@ onTaskCompletion(target => run(async () => {
   if (!current || !stillSelected() || !navigator.onLine) return;
   const readOrWrite = sessionRequest(current);
   const guardedRequest = (url, options) => {
+    if (options?.method === 'PUT') updateDayDate();
     if (!stillSelected()) throw new Error('Источник или день изменился. Выбери дело заново.');
     return readOrWrite(url, options);
   };
 
   status('Сверяем дело с актуальной версией в Drive…');
   try {
-    const {verified, already} = await completeTask(target, guardedRequest);
+    const change = reopen ? reopenTask : completeTask;
+    const {verified, already} = await change(target, guardedRequest);
     if (!stillSelected()) return;
     displayTaskList(verified);
-    status(already ? 'Drive подтвердил, что дело уже выполнено.' : 'Дело выполнено. Отметка подтверждена чтением из Drive.');
+    if (reopen) status(already ? 'Drive подтвердил, что дело уже открыто.' : 'Дело снова открыто. Возврат подтверждён чтением из Drive.');
+    else status(already ? 'Drive подтвердил, что дело уже выполнено.' : 'Дело выполнено. Отметка подтверждена чтением из Drive.');
   } catch (error) {
     if (!stillSelected()) return;
     if (error.current) {

@@ -86,6 +86,35 @@ test('one click checks the selected source only after readback, leaving a pinned
   assert.equal(await page.locator('#thought').inputValue(), draftText);
 });
 
+test('reopen is offered in expanded, editable completed rows and reads back exactly the selected duplicate', async t => {
+  const {page, state, tasks, card} = await setup(t);
+  const same = 'Подготовить рюкзак';
+  tasks.text += '<!-- my-day:task:786c81b9-ad3e-48e5-9350-019745c6c072 -->\r\n- [X] ' + same + '\r\n';
+  tasks.version++;
+  await page.locator('#today-refresh').click();
+  const summary = card.locator('[data-body] summary');
+  await summary.filter({hasText:'Выполнено задач: 2'}).waitFor();
+  const button = card.getByRole('button', {name:'Вернуть в дела — ' + same, exact:true});
+  assert.equal(await card.locator('[data-reopen]').count(), 0);
+  await summary.press('Enter');
+  await button.last().waitFor();
+  assert.equal(await button.count(), 2);
+  const before = tasks.text;
+  await button.nth(1).press('Enter');
+  await notice(page, 'Возврат подтверждён чтением');
+  assert.equal(tasks.text, before.replace('- [X] ' + same, '- [ ] ' + same));
+  assert.equal(state.patches, 1);
+  assert.equal(await button.count(), 1);
+  assert.equal(await summary.textContent(), 'Выполнено задач: 1');
+  assert.equal(await card.getByRole('button', {name:'Выполнено — ' + same, exact:true}).count(), 1);
+  assert.equal((await saved(page)).draft.text, draftText);
+  tasks.canEdit = false;
+  await button.click();
+  await notice(page, /право редактирования/i);
+  assert.equal(await card.locator('[data-reopen]').count(), 0);
+  assert.equal(state.patches, 1);
+});
+
 test('a lost write reply without any plan can be reconciled by refresh without another write', async t => {
   const {page, state, tasks, card, button} = await setup(t);
   state.loseReply = true;

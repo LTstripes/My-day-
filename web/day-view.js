@@ -22,10 +22,24 @@ export function onTaskCompletion(handler) {
 }
 export function setTaskActionsEnabled(enabled) {
   actionsEnabled = enabled;
-  for (const button of panels.get(TASKS).element.querySelectorAll('[data-complete]')) button.disabled = !enabled;
+  for (const button of panels.get(TASKS).element.querySelectorAll('[data-complete], [data-reopen]')) button.disabled = !enabled;
 }
 
-function completedTasks(entries, fileId, open) {
+function checkboxAction(entry, source) {
+  const reopen = entry.kind === 'done';
+  const target = {...source, line: entry.lineIndex};
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'secondary';
+  button.dataset[reopen ? 'reopen' : 'complete'] = '';
+  button.textContent = reopen ? 'Вернуть в дела' : 'Выполнено';
+  button.setAttribute('aria-label', button.textContent + ' — ' + entry.text);
+  button.disabled = !actionsEnabled;
+  button.onclick = () => complete(target, reopen);
+  return button;
+}
+
+function completedTasks(entries, fileId, open, source) {
   const details = document.createElement('details');
   details.dataset.fileId = fileId;
   details.dataset.date = localDate;
@@ -41,6 +55,7 @@ function completedTasks(entries, fileId, open) {
     for (const entry of entries) {
       const item = document.createElement('li');
       item.textContent = entry.text;
+      if (source) item.append(checkboxAction(entry, source));
       list.append(item);
     }
   }
@@ -67,6 +82,7 @@ function render(name, panel) {
     } else {
       const {items, selected, unsupported} = todayTasks(content, localDate);
       heading.textContent = selected ? 'Дела на сегодня' : 'Список дел';
+      const source = panel.canEdit && !error ? {fileId: id, date: localDate, version: panel.version, content} : null;
       const visible = items.filter(entry => entry.kind !== 'done');
       const done = items.filter(entry => entry.kind === 'done');
       if (visible.length) {
@@ -82,18 +98,7 @@ function render(name, panel) {
             item.append(marker);
           }
           item.append(entry.text);
-          if (entry.kind === 'open' && panel.canEdit && !error) {
-            const target = {fileId: id, date: localDate, line: entry.lineIndex, content};
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'secondary';
-            button.dataset.complete = '';
-            button.textContent = 'Выполнено';
-            button.setAttribute('aria-label', 'Выполнено — ' + entry.text);
-            button.disabled = !actionsEnabled;
-            button.onclick = () => complete(target);
-            item.append(button);
-          }
+          if (entry.kind === 'open' && source) item.append(checkboxAction(entry, source));
           list.append(item);
         }
         body.append(list);
@@ -106,7 +111,7 @@ function render(name, panel) {
         body.textContent = selected ? 'В разделе дня нет пунктов списка.' : 'Нет пунктов для показа сегодня.';
       }
       if (done.length) {
-        const details = completedTasks(done, id, keepOpen);
+        const details = completedTasks(done, id, keepOpen, source);
         body.append(details);
         if (keepFocus) details.querySelector('summary').focus({preventScroll: true});
       }

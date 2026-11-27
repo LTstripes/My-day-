@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {completeTask} from '../web/complete-task.js';
+import {completeTask, reopenTask} from '../web/complete-task.js';
 
 const original = '\uFEFF# To Do now\r\n## Сегодня\n- Купить чай\r\n  + [ ] Полить ёлку <!-- сад -->\r- [ ] Вторая\n';
 const finished = original.replace('+ [ ]', '+ [x]');
@@ -52,6 +52,61 @@ test('one conditional update to the selected file preserves BOM, mixed newlines,
   assert.equal(result.verified.meta.id, selection.fileId);
   assert.equal(result.verified.content, finished);
   assert.equal(state.content, finished);
+});
+
+const taskMarker = '<!-- my-day:task:786c81b9-ad3e-48e5-9350-019745c6c072 -->';
+const duplicates = '\uFEFF---\r\ntags: [дела]\n---\r## Сегодня\n- [x] Купить чай\r\n' +
+  taskMarker + '\r\n  + [X] Купить чай\r## Завтра\n- [X] Купить чай';
+const reopened = duplicates.replace('+ [X]', '+ [ ]');
+const chosen = {...selection, content: duplicates, line: 6, version: '7'};
+
+test('reopen the selected second duplicate only, preserving its operation marker, section, BOM, case and mixed line endings', async () => {
+  const {state, request} = fixture();
+  state.content = duplicates;
+  const result = await reopenTask(chosen, request);
+  assert.equal(result.verified.content, reopened);
+  assert.equal(result.already, false);
+  assert.equal(state.writes, 1);
+  const retry = await reopenTask(chosen, request);
+  assert.equal(retry.already, true);
+  assert.equal(state.writes, 1);
+});
+
+test('reopen refuses stale versions or bytes, another section, an open row, disguised markers and missing write access', async () => {
+  const commented = '## Сегодня\n<!-- пример\n- [X] скрытый --> - [x] Видимый пункт';
+  for (const [source, current, line, version, canEdit] of [
+    [duplicates, duplicates, 6, undefined, true],
+    [duplicates, duplicates, 6, '6', true],
+    [duplicates, duplicates.replace('## Сегодня', '## Сегодня\n- [X] Купить чай'), 6, '7', true],
+    [duplicates, duplicates, 8, '7', true],
+    [reopened, reopened, 6, '7', true],
+    [commented, commented, 2, '7', true],
+    [duplicates, duplicates, 6, '7', false]
+  ]) {
+    const {state, request} = fixture();
+    Object.assign(state, {content:current, canEdit});
+    await assert.rejects(reopenTask({...chosen, content:source, line, version}, request), e => e.current?.content === current);
+    assert.equal(state.writes, 0);
+  }
+});
+
+test('a lost reopen reply, a concurrent reopen and a 412 caused by a different change never toggle the checkbox back', async () => {
+  for (const mode of ['lost', 'same intent', 'other edit']) {
+    const {state, request} = fixture();
+    state.content = duplicates;
+    if (mode === 'lost') {
+      state.afterWrite = () => { throw new TypeError('network'); };
+      await assert.rejects(reopenTask(chosen, request), e => e.uncertain === true);
+      assert.equal((await reopenTask(chosen, request)).already, true);
+      assert.equal(state.writes, 1);
+    } else {
+      state.beforeWrite = () => { state.content = mode === 'same intent' ? reopened : duplicates + '\n- Ещё дело'; state.version++; };
+      if (mode === 'same intent') assert.equal((await reopenTask(chosen, request)).already, true);
+      else await assert.rejects(reopenTask(chosen, request), e => e.reselect && e.current.content === state.content);
+      assert.equal(state.writes, 0);
+    }
+    assert.equal(state.content, mode === 'other edit' ? duplicates + '\n- Ещё дело' : reopened);
+  }
 });
 
 test('a version change during readback retries one complete snapshot without sending a second write', async () => {
