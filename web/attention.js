@@ -3,6 +3,7 @@ import {noteProperties} from './note-properties.js?v=0.16.0';
 const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
 const timestamp = /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 const dayFormat = new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'});
+const statusOrder = ['Просрочено', 'Сегодня', 'Скоро'];
 
 function localDay(date) {
   return [String(date.getFullYear()).padStart(4, '0'), String(date.getMonth() + 1).padStart(2, '0'),
@@ -40,7 +41,7 @@ export function attentionStatus(date, now) {
   return dueDay <= localDay(end) ? 'Скоро' : null;
 }
 
-export function initAttention(panel) {
+export function initAttention(panel, onOpen) {
   const list = panel.querySelector('ul');
   const state = panel.querySelector('[role=status]');
   let sources = new Map(), timer;
@@ -60,13 +61,16 @@ export function initAttention(panel) {
       const status = attentionStatus(date, now);
       if (status) rows.push({id, date, status, day: date.day ?? localDay(new Date(date.instant))});
     }
-    rows.sort((a, b) => a.day.localeCompare(b.day) || (a.date.instant ?? -Infinity) - (b.date.instant ?? -Infinity) ||
+    rows.sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status) ||
+      a.day.localeCompare(b.day) || (a.date.instant ?? -Infinity) - (b.date.instant ?? -Infinity) ||
       sources.get(a.id).localeCompare(sources.get(b.id), 'ru'));
     list.replaceChildren();
     for (const {id, date, status} of rows) {
       const item = document.createElement('li');
       const link = document.createElement('a'), time = document.createElement('time');
-      link.textContent = sources.get(id);
+      const name = sources.get(id);
+      link.textContent = name;
+      link.setAttribute('aria-label', 'Открыть в Drive: ' + name);
       link.href = 'https://drive.google.com/open?id=' + encodeURIComponent(id);
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
@@ -75,6 +79,15 @@ export function initAttention(panel) {
         new Date(date.instant).toLocaleString('ru-RU', {day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit',
           minute: '2-digit', second: '2-digit', timeZoneName: 'short'});
       item.append(status + ' · ', time, ' · ', link);
+      if (onOpen) {
+        const open = document.createElement('button');
+        open.type = 'button';
+        open.className = 'secondary';
+        open.textContent = 'Открыть в заметках';
+        open.setAttribute('aria-label', 'Открыть в заметках: ' + name);
+        open.onclick = () => onOpen(id);
+        item.append(' ', open);
+      }
       list.append(item);
     }
     const messages = [];
