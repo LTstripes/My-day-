@@ -51,6 +51,77 @@ test('Today displays ordinary bullets beside open tasks, preserves the source an
   assert.equal(state.patches, 0);
 });
 
+test('completed tasks follow the selected source, preserve keyboard focus on refresh and disappear after revocation', async t => {
+  const {open, state} = await fixture(browser, t);
+  const {tasks} = addSources(state);
+  tasks.text = '## Сегодня\n- [x] Забрать посылку\n- [X] Купить чай\n## Завтра\n- [x] Отнести письмо';
+  const page = await open();
+  await firstFile(page, true);
+  const pickTasks = pickerFor(page, 'To Do now.md');
+  await pick(page, 'day-tasks', pickTasks);
+  const body = page.locator('#today-tasks [data-body]');
+  const summary = body.locator('summary');
+  const rows = body.locator('details li');
+  await waitText(body, 'Все задачи в списке выполнены');
+  assert.equal(await summary.textContent(), 'Выполнено задач: 2');
+  assert.equal(await rows.count(), 0);
+  const reads = state.mediaReads.length;
+  await summary.focus();
+  await summary.press('Enter');
+  await rows.first().waitFor();
+  assert.deepEqual(await rows.allTextContents(), ['Забрать посылку', 'Купить чай']);
+  assert.equal(state.mediaReads.length, reads);
+  assert.equal(await body.getByRole('button').count(), 0);
+  changeText(tasks, '## Сегодня\n- [x] Куплен чай\nЕщё один абзац');
+  await page.locator('#today-refresh').evaluate(button => button.click());
+  await rows.filter({hasText:'Куплен чай'}).waitFor();
+  assert.equal(await summary.evaluate(node => node === document.activeElement), true);
+  assert.equal(await summary.textContent(), 'Выполнено задач: 1');
+  assert.match(await body.textContent(), /текст вне списка/);
+  state.files.set('other-tasks', {name:'To Do now.md', text:'- [x] Вторая заметка', version:1});
+  await pick(page, 'other-tasks', pickTasks);
+  await waitText(body, 'Все задачи в списке выполнены');
+  assert.equal(await body.locator('details').evaluate(node => node.open), false);
+  await summary.press('Space');
+  await rows.filter({hasText:'Вторая заметка'}).waitFor();
+  state.files.get('other-tasks').refusal = {status:403, reason:'appNotAuthorizedToFile'};
+  await page.locator('#today-refresh').click();
+  await summary.waitFor({state:'detached'});
+  assert.equal(await body.textContent(), '');
+  assert.equal(state.patches, 0);
+});
+
+test('a new day or login folds the completed list, and a day without tasks has no disclosure', async t => {
+  const {open, state} = await fixture(browser, t, {timezoneId:'UTC'});
+  const {tasks} = addSources(state);
+  tasks.text = '## 2026-11-26\n- [x] Четверг\n## 2026-11-27\n- [X] Пятница';
+  const page = await open();
+  await page.clock.install({time:new Date('2026-11-26T23:58:00Z')});
+  await page.reload();
+  await firstFile(page, true);
+  await pick(page, 'day-tasks', pickerFor(page, 'To Do now.md'));
+  const body = page.locator('#today-tasks [data-body]');
+  const summary = body.locator('summary');
+  await summary.click();
+  await body.getByText('Четверг', {exact:true}).waitFor();
+  await page.clock.fastForward(121000);
+  await page.locator('#today-date[datetime="2026-11-27"]').waitFor();
+  assert.equal(await body.locator('details').evaluate(node => node.open), false);
+  await summary.click();
+  await body.getByText('Пятница', {exact:true}).waitFor();
+  await page.locator('#disconnect').click();
+  await summary.waitFor({state:'detached'});
+  assert.equal(await body.textContent(), '');
+  await page.locator('#connect').click();
+  await summary.waitFor();
+  assert.equal(await body.locator('details').evaluate(node => node.open), false);
+  changeText(tasks, '## Сегодня\n\n## Завтра\n- [x] Другая дата');
+  await page.locator('#today-refresh').click();
+  await waitText(body, 'В разделе дня нет пунктов списка.');
+  assert.equal(await body.locator('details').count(), 0);
+  assert.equal(state.patches, 0);
+});
+
 test('quick capture keeps the explicitly open Inbox when another file has the same name', async t => {
   const {open, state} = await fixture(browser, t);
   const original = '# Мысли\n';

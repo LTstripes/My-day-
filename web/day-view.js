@@ -25,12 +25,40 @@ export function setTaskActionsEnabled(enabled) {
   for (const button of panels.get(TASKS).element.querySelectorAll('[data-complete]')) button.disabled = !enabled;
 }
 
+function completedTasks(entries, fileId, open) {
+  const details = document.createElement('details');
+  details.dataset.fileId = fileId;
+  details.dataset.date = localDate;
+  const summary = document.createElement('summary');
+  summary.textContent = 'Выполнено задач: ' + entries.length;
+  const list = document.createElement('ul');
+  details.append(summary, list);
+  details.open = open;
+  function showItems() {
+    if (details.open === list.hasChildNodes()) return;
+    list.replaceChildren();
+    if (!details.open) return;
+    for (const entry of entries) {
+      const item = document.createElement('li');
+      item.textContent = entry.text;
+      list.append(item);
+    }
+  }
+  details.ontoggle = showItems;
+  if (open) showItems();
+  return details;
+}
+
 function render(name, panel) {
   const {element, id, content, readAt, error} = panel;
   const body = element.querySelector('[data-body]');
   const state = element.querySelector('[data-state]');
   const link = element.querySelector('[data-open]');
   const heading = element.querySelector('h3');
+  const previous = body.querySelector('details');
+  const sameList = previous && previous.dataset.fileId === id && previous.dataset.date === localDate;
+  const keepOpen = Boolean(sameList && previous.open);
+  const keepFocus = sameList && previous.contains(document.activeElement);
   body.replaceChildren();
   if (name === TASKS) heading.textContent = 'Дела на сегодня';
   if (content != null) {
@@ -40,6 +68,7 @@ function render(name, panel) {
       const {items, selected, unsupported} = todayTasks(content, localDate);
       heading.textContent = selected ? 'Дела на сегодня' : 'Список дел';
       const visible = items.filter(entry => entry.kind !== 'done');
+      const done = items.filter(entry => entry.kind === 'done');
       if (visible.length) {
         const list = document.createElement('ul');
         for (const entry of visible) {
@@ -68,17 +97,18 @@ function render(name, panel) {
           list.append(item);
         }
         body.append(list);
-        if (visible.length < items.length) {
-          const summary = document.createElement('small');
-          summary.textContent = 'Выполнено задач: ' + (items.length - visible.length);
-          body.append(summary);
-        }
       } else if (unsupported) {
-        body.textContent = 'Формат списка не распознан. Открой источник в Drive, чтобы увидеть текст.';
+        body.textContent = done.length ? 'В заметке есть текст вне списка. Полный текст доступен в Drive.' :
+          'Формат списка не распознан. Открой источник в Drive, чтобы увидеть текст.';
       } else if (items.length) {
         body.textContent = 'Все задачи в списке выполнены.';
       } else {
         body.textContent = selected ? 'В разделе дня нет пунктов списка.' : 'Нет пунктов для показа сегодня.';
+      }
+      if (done.length) {
+        const details = completedTasks(done, id, keepOpen);
+        body.append(details);
+        if (keepFocus) details.querySelector('summary').focus({preventScroll: true});
       }
     }
   }
