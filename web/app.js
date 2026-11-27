@@ -29,6 +29,7 @@ let device = newDevice(), personal = false, stored = null, legacy = null, storag
 let client = null, session = null, expiryTimer, pickerReady = false, pickerWindow = null, awaitingLogin = false, busy = false;
 let promptNext = null, hasConnected = false, readAt = '', refreshAfterBusy = false;
 let handoff = null, networkChanged = false;
+let taskPhraseSource = null;
 let returnCheck = null;
 let hiddenSince = null, overviewDue = false;
 const planReads = new Map();
@@ -193,6 +194,7 @@ function selectHandoffRecord(keepDetails = false) {
   $('handoff-show-answer').hidden = state !== 'saved' || !record.answerRange;
   $('handoff-result').textContent = record?.result ?? '';
   $('handoff-result').hidden = !record?.result;
+  syncTaskPhrase(record);
   $('handoff-result-state').textContent = state === 'saved' ? 'Ответ сохранён в Drive.' :
     state === 'missing' ? 'Ответа в Drive пока нет.' :
     state === 'ambiguous' ? 'Ответ в Drive не удалось однозначно подтвердить.' :
@@ -220,6 +222,90 @@ function openHandoffReader(range) {
 $('handoff-show-source').onclick = () => openHandoffReader(handoff?.record?.sourceRange);
 $('handoff-show-answer').onclick = () => {
   if (handoff?.record?.resultState === 'saved') openHandoffReader(handoff.record.answerRange);
+};
+function savedAnswerText(readable, record) {
+  if (record?.resultState !== 'saved' || !record.answerRange) return '';
+  return readable.text.slice(readable.offset(record.answerRange.start), readable.offset(record.answerRange.end)).trim();
+}
+function syncTaskPhrase(record) {
+  const text = handoff ? savedAnswerText(handoff.readable, record) : '';
+  const fileId = text ? handoff.fileId : null;
+  const op = text ? record.op : null;
+  if (text && taskPhraseSource?.fileId === fileId && taskPhraseSource.op === op && taskPhraseSource.text === text) return;
+  taskPhraseSource = text ? {fileId, op, text} : null;
+  $('handoff-task-phrase').hidden = !text;
+  $('handoff-task-phrase').open = false;
+  $('handoff-task-answer').value = text;
+  $('handoff-task-answer').setSelectionRange(0, 0);
+  $('handoff-task-state').textContent = '';
+}
+function updateTaskPhraseControls(taskFile, canSend) {
+  const reason = device.taskDraft ? 'Сначала закончи текущий черновик дела.' :
+    !preferredFile(device, TASKS) ? 'Выбери свой список в карточке «Дела на сегодня».' :
+    !taskFile ? 'Обнови список дел, чтобы проверить доступ.' :
+    !taskFile.canEdit ? 'Для добавления дела нужен доступ на редактирование.' : '';
+  $('handoff-task-draft').disabled = Boolean(!taskPhraseSource || !canSend || reason);
+  $('handoff-task-hint').textContent = reason || 'Выдели фразу в ответе. Её можно поправить перед добавлением.';
+}
+$('handoff-task-draft').onclick = async () => {
+  if ($('handoff-task-draft').disabled || !handoffAvailable()) return;
+  const answer = $('handoff-task-answer'), state = $('handoff-task-state');
+  const text = answer.value.slice(answer.selectionStart, answer.selectionEnd).replace(/\s+/g, ' ').trim();
+  if (!text || text.length > 300 || /[\x00-\x1f\x7f]/.test(text)) {
+    state.textContent = 'Выдели фразу до 300 символов.';
+    answer.focus();
+    return;
+  }
+  const source = taskPhraseSource, current = session;
+  const fileId = taskSource()?.fileId;
+  const stillSelected = () => session === current && Date.now() < current.until && !storageFault &&
+    navigator.onLine && !networkChanged && taskPhraseSource === source && !device.taskDraft &&
+    preferredFile(device, TASKS) === fileId;
+  const saved = await run(async () => {
+    state.textContent = 'Сверяем ответ и список дел с Drive…';
+    const read = sessionRequest(current);
+    try {
+      const [inbox, tasks] = await Promise.all([
+        markdownSnapshot(source.fileId, read, device.noteNames[source.fileId]),
+        snapshot(fileId, read, TASKS)
+      ]);
+      if (!stillSelected()) {
+        if (taskPhraseSource === source) state.textContent = 'Ответ или список дел изменился. Выбери фразу снова.';
+        return;
+      }
+      const record = buildHandoffHistory(inbox.meta.id, inbox.meta.name, inbox.content).records.find(item => item.op === source.op);
+      if (savedAnswerText(readableNote(inbox.content), record) !== source.text) {
+        updateSources(inbox);
+        show(inbox);
+        status('Ответ изменился. Сверь свежий текст и выдели фразу заново.');
+        $('handoff-task-phrase').open = true;
+        state.textContent = 'Ответ изменился. Выдели фразу из новой версии.';
+        return;
+      }
+      displayTaskList(tasks);
+      if (!tasks.meta.capabilities?.canEdit) {
+        state.textContent = 'Для добавления дела нужен доступ на редактирование.';
+        return;
+      }
+      device.taskDraft = {fileId, text, op: null};
+      if (!persist()) {
+        delete device.taskDraft;
+        state.textContent = 'Черновик не сохранился. Выделенный текст остался в ответе.';
+        return;
+      }
+      state.textContent = '';
+      taskEntry.message('Фраза перенесена в черновик дела. Проверь текст и нажми «Добавить дело».');
+      return true;
+    } catch (error) {
+      if (!stillSelected()) return;
+      if (error.access === 'expired' || error.access === 'consent') { fail(error); return; }
+      state.textContent = errorMessage(error);
+    }
+  }, 'answer-to-task');
+  if (saved && device.taskDraft?.fileId === fileId && !$('task-text').disabled) {
+    $('task-text').focus({preventScroll:true});
+    $('task-entry').scrollIntoView({block:'center'});
+  }
 };
 $('handoff-back').onclick = () => {
   if (!handoffAvailable()) return;
@@ -638,7 +724,9 @@ function controls() {
   receipts.enable(connected && !locked && navigator.onLine);
   const canSendTask = connected && !locked && !storageFault && navigator.onLine;
   setTaskActionsEnabled(canSendTask);
-  taskEntry.update(taskSource(), device.taskDraft, editingLocked, canSendTask);
+  const taskFile = taskSource();
+  taskEntry.update(taskFile, device.taskDraft, editingLocked, canSendTask);
+  updateTaskPhraseControls(taskFile, canSendTask);
   $('search-draft').hidden = !draft;
   $('search-draft').disabled = editingLocked;
   $('pick').disabled = locked || !connected || !pickerReady;

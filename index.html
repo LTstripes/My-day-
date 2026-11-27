@@ -223,6 +223,14 @@ footer { margin-top:20px; font-size:.85rem; }
       <button id="handoff-show-answer" class="secondary" type="button" aria-controls="preview" hidden>Открыть ответ в заметке</button>
       <button id="handoff-open" class="secondary" aria-expanded="false" aria-controls="handoff-details">Разобрать последнюю запись</button>
     </div>
+    <details id="handoff-task-phrase" hidden>
+      <summary>Выбрать фразу для дела</summary>
+      <label for="handoff-task-answer">Первая строка ответа</label>
+      <textarea id="handoff-task-answer" rows="5" readonly aria-describedby="handoff-task-hint"></textarea>
+      <p id="handoff-task-hint" class="meta muted"></p>
+      <button id="handoff-task-draft" type="button" class="secondary" disabled>В черновик дела</button>
+      <p id="handoff-task-state" class="meta" role="status"></p>
+    </details>
     <div id="handoff-details" hidden>
       <label for="handoff-command">Команда для чата с доступом к Google Drive</label>
       <textarea id="handoff-command" rows="6" readonly spellcheck="false" autocomplete="off"></textarea>
