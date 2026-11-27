@@ -49,10 +49,41 @@ test('Today reads only selected notes, refreshes an inactive date, and drops rev
   await page.locator('#today-refresh').click();
   await panel.getByRole('status').filter({hasText:'недоступна'}).waitFor();
   assert.equal(await panel.locator('a').count(), 0);
+  assert.equal(await panel.getByRole('button').count(), 0);
   assert(!((await panel.textContent()).includes('Забрать образец')));
 
   await page.locator('#disconnect').click();
   await panel.waitFor({state:'hidden'});
   assert.equal(state.patches, 0);
   assert(!state.mediaReads.includes('unused'));
+});
+
+test('attention orders overdue dates first and opens the selected namesake by id', async t => {
+  const {open} = await fixture(browser, t, {serviceWorkers:'block', timezoneId:'Europe/Moscow'});
+  const page = await open();
+  await page.clock.setFixedTime(new Date('2026-11-26T15:00:00Z'));
+  const name = 'Отчёт <пример>.md';
+  const times = ['2026-11-27', '2026-11-26T23:00+03:00', '2026-11-26',
+    '2026-11-26T12:00+03:00', '2026-11-26T02:00+03:00', '2026-11-25'];
+  await page.evaluate(async ({name, times}) => {
+    const {initAttention} = await import('./web/attention.js');
+    const panel = document.querySelector('#today-attention').cloneNode(true);
+    panel.id = 'sample-attention';
+    document.querySelector('main').append(panel);
+    const attention = initAttention(panel, id => { panel.dataset.opened = id; });
+    const notes = times.map((_, index) => ({id:'note-' + index, name}));
+    attention.setSources(notes);
+    times.forEach((time, index) => attention.show({meta:notes[index], content:'---\nmyday_attention: ' + time + '\n---'}));
+  }, {name,times});
+  const panel = page.locator('#sample-attention');
+  assert.deepEqual(await panel.locator('time').evaluateAll(nodes => nodes.map(node => node.dateTime)), [...times].reverse());
+  const row = panel.locator('li').filter({has:page.locator('time[datetime="2026-11-26T02:00+03:00"]')});
+  const link = row.getByRole('link', {name:'Открыть в Drive: ' + name, exact:true});
+  assert.equal(await link.getAttribute('href'), 'https://drive.google.com/open?id=note-4');
+  assert.equal(await link.getAttribute('target'), '_blank');
+  assert.equal(await link.getAttribute('rel'), 'noopener noreferrer');
+  const button = row.getByRole('button', {name:'Открыть в заметках: ' + name, exact:true});
+  await button.focus();
+  await button.press('Enter');
+  assert.equal(await panel.getAttribute('data-opened'), 'note-4');
 });

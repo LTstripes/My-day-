@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {noteProperties} from '../web/note-properties.js';
-import {patchView, saveView} from '../web/save-view.js';
+import {patchView, saveView, patchAttention, saveAttention} from '../web/save-view.js';
 
 const source = '\uFEFF---\r\ntags: [книги, планы]\n# комментарий\r\nmyday_view : "text"  # вид\r\n' +
   'aliases:\r\n  - "книга"\n...\r\n# Покупки\n- [ ] Чай\r\n<!-- my-day:служебное -->';
@@ -46,6 +46,42 @@ test('ambiguous and malformed frontmatter never gets rewritten', () => {
   assert.throws(() => patchView('%TAG !e! tag:example.com,2026:\n---\n# A', 'plan'), /однозначно/);
 });
 
+const day = '2028-02-29';
+const exact = '2026-11-27T08:15:09.300+03:00';
+const inlineDate = 'myday_attention : "' + exact + '"  # напоминание\r\n';
+const datedSource = source.replace('aliases:', inlineDate + 'aliases:');
+
+test('schedule or remove exactly one attention property and preserve its inline comment, BOM, view and original bytes', () => {
+  assert.equal(patchAttention(datedSource, day), datedSource.replace(exact, day));
+  assert.equal(patchAttention(datedSource, null), datedSource.replace(inlineDate, '  # напоминание\r\n'));
+  for (const eol of ['\r', '\n', '\r\n']) {
+    const note = '\uFEFF# Идея' + eol + 'myday_attention: текст в теле';
+    assert.equal(patchAttention(note, null), note);
+    const emptyHeader = '\uFEFF---' + eol + '---' + eol + note.slice(1);
+    const newHeader = '---' + eol + 'myday_attention: ' + day + eol + '---' + eol;
+    const scheduled = patchAttention(note, day);
+    assert.equal(scheduled, '\uFEFF' + newHeader + note.slice(1));
+    assert.equal(patchAttention(scheduled.replace(day, day + '  '), null), emptyHeader);
+    assert.equal(patchAttention(scheduled, day), scheduled);
+  }
+  assert.equal(patchAttention(datedSource, exact), datedSource);
+  assert.equal(patchView(datedSource, 'list'), datedSource.replace('"text"', '"list"'));
+  assert.equal(patchAttention(datedSource, '2026-11-27'), datedSource.replace(exact, '2026-11-27'));
+});
+
+test('refuse invalid date inputs, unsupported timestamp changes and ambiguous YAML', () => {
+  for (const value of ['', undefined, 0, '2026-02-29', '2026-13-01', '26-11-27', exact, exact + '\n']) {
+    assert.throws(() => patchAttention(source, value), /дат/);
+  }
+  for (const fields of ['myday_attention: one\nmyday_attention: two', 'myday_attention:\n  - one', 'myday_attention: [one]']) {
+    const raw = '---\n' + fields + '\n---\nHello';
+    assert.throws(() => patchAttention(raw, null), /однозначно/);
+    assert.throws(() => patchAttention(raw, day), /однозначно/);
+  }
+  const invalidExact = '2026-02-29T00:00:00Z';
+  assert.throws(() => patchAttention(datedSource.replace(exact, invalidExact), invalidExact), /дат/);
+});
+
 function fixture() {
   const state = {text:source, version:4, puts:0, canEdit:true, name:choice.name, requests:[]};
   const edit = value => { state.text = value; state.version++; };
@@ -74,7 +110,7 @@ function fixture() {
     return Response.json({id:choice.fileId, name:state.name, mimeType:'text/markdown', version:String(state.version),
       size:String(Buffer.byteLength(state.text)), capabilities:{canEdit:state.canEdit}});
   }
-  return {state, edit, run:(args = choice) => saveView(args, request)};
+  return {state, edit, request, run:(args = choice) => saveView(args, request)};
 }
 
 test('verify the bytes after saving, confirm a delivered retry without issuing another write', async () => {
@@ -104,6 +140,49 @@ test('a stale displayed version and ETag race preserve the external edit; no wri
       error.reselect && error.current?.content === state.text : true);
     assert.equal(state.puts, 0, mode);
     assert.equal(state.text, ['stale','412'].includes(mode) ? source + '\nДругое изменение' : source);
+  }
+});
+
+test('save, reschedule and remove attention in the selected file with exact verified readback', async () => {
+  const {state, request} = fixture();
+  const run = date => saveAttention({...choice, version:String(state.version), date}, request);
+  assert.equal((await run(null)).already, true);
+  const saved = await run(day);
+  assert.equal(saved.verified.content, patchAttention(source, day));
+  assert.equal(saved.already, false);
+  const changed = await run('2028-03-01');
+  assert.equal(changed.verified.content, saved.verified.content.replace(day, '2028-03-01'));
+  const cleared = await run(null);
+  assert.equal(cleared.verified.content, source);
+  assert.equal((await run(null)).already, true);
+  assert.equal(state.puts, 3);
+});
+
+test('require a fresh version, strong ETag and edit permission; recover an attention removal after a lost reply', async () => {
+  for (const mode of ['stale', '412', 'weak', 'read-only', 'template', 'lost', 'readback']) {
+    const {state, edit, request} = fixture();
+    state.text = datedSource;
+    const args = {...choice, date:null};
+    if (mode === 'stale') edit(datedSource + '\nЧужой абзац');
+    if (mode === '412') state.beforePut = () => edit(datedSource + '\nЧужой абзац');
+    if (mode === 'weak') state.tag = 'W/"etag"';
+    if (mode === 'read-only') state.canEdit = false;
+    if (mode === 'template') args.name = state.name = 'My-Day-test.md';
+    if (mode === 'lost') state.afterPut = () => { throw new TypeError('lost response'); };
+    if (mode === 'readback') state.afterPut = () => edit(state.text + '\nЧужой абзац');
+    await assert.rejects(saveAttention(args, request), error => {
+      if (mode === 'stale' || mode === '412') return error.reselect && error.current.content === state.text;
+      if (mode === 'lost' || mode === 'readback') return error.uncertain === true;
+      return true;
+    });
+    if (mode === 'lost' || mode === 'readback') {
+      assert.equal((await saveAttention(args, request)).already, true);
+      assert.equal(state.puts, 1);
+      assert.equal(state.text, patchAttention(datedSource, null) + (mode === 'readback' ? '\nЧужой абзац' : ''));
+    } else {
+      assert.equal(state.puts, 0);
+      assert(state.text.startsWith(datedSource));
+    }
   }
 });
 
