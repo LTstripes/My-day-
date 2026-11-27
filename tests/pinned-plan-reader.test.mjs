@@ -22,11 +22,13 @@ const profile = {
   notes: [reminder, otherReminder], readerId: reminder.id
 };
 
-async function setup(t) {
+async function setup(t, storedProfile = profile) {
   const {ctx, open, state} = await fixture(browser, t, {viewport:{width:360,height:760}, serviceWorkers:'block'});
   const file = (name, text) => ({name, text, version:1});
   state.files.set('inbox', file('Мысли.md', '# Мысли\n'));
-  state.files.set('tasks', file('To Do now.md', '- [ ] Текущее дело\n'));
+  state.files.set('tasks', file('To Do now.md', '- [ ] Текущее дело\n\nКонтекст списка задач.\n'));
+  state.files.set('tasks-copy', file('To Do now.md', '- [ ] Дело из копии\n'));
+  state.files.set('focus', file('Now.md', '# Now\nКонтекст дня.\n'));
   state.files.set(pinned.id, file(pinned.name, source));
   state.files.set(browsing.id, file(browsing.name, '- [ ] Заполнить заявку'));
   state.files.set(reminder.id, file(reminder.name, due + 'Первый адрес'));
@@ -40,7 +42,7 @@ async function setup(t) {
     await page.getByText(releaseLabel, {exact:true}).waitFor();
   } else page = await open();
   page.setDefaultTimeout(7500);
-  await page.evaluate(data => localStorage.setItem('my-day-device-v1', JSON.stringify(data)), profile);
+  await page.evaluate(data => localStorage.setItem('my-day-device-v1', JSON.stringify(data)), storedProfile);
   await page.reload();
   await page.clock.setFixedTime(new Date('2026-11-27T11:00:00Z'));
   await page.locator('#connect').click();
@@ -55,6 +57,47 @@ async function keyboardOpen(page, selector) {
   await button.press('Enter');
 }
 const focusId = page => page.evaluate(() => document.activeElement.id);
+
+test('Today opens the preferred focus and task source, keeps drafts, and remembers the reader selection', async t => {
+  const storedProfile = {...profile, fileIds:[...profile.fileIds,'focus','tasks-copy'],
+    noteNames:{...profile.noteNames,focus:'Now.md','tasks-copy':'To Do now.md'},
+    preferredIds:{...profile.preferredIds,'Now.md':'focus'}};
+  const {page,state} = await setup(t, storedProfile);
+  const drafts = await saved(page);
+  const tasks = '[data-day-reader="To Do now.md"]';
+  const now = '[data-day-reader="Now.md"]';
+  await keyboardOpen(page,tasks);
+  await page.locator('#reader-link[href$="=tasks"]').waitFor();
+  assert.equal(await page.locator('#reader-view').inputValue(),'list');
+  assert.equal(await page.locator('#reader-save').isDisabled(),true);
+  await page.locator('#reader-full').click();
+  await page.locator('#reader-content').getByText(/Контекст списка задач/).waitFor();
+  assert.doesNotMatch(await page.locator('#reader-content').textContent(),/Дело из копии/);
+  await page.locator('#reader-back').click();
+  assert.equal(await page.locator(tasks).evaluate(el => el === document.activeElement),true);
+  await keyboardOpen(page,now);
+  await page.locator('#reader-link[href$="=focus"]').waitFor();
+  assert.equal(await page.locator('#reader-view').inputValue(),'text');
+  await page.locator('#reader-content').getByText(/Контекст дня/).waitFor();
+  await page.reload();
+  await page.locator('#connect').click();
+  await page.locator('#reader-link[href$="=focus"]').waitFor();
+  const after = await saved(page);
+  assert.equal(after.activeId,'inbox');
+  assert.equal(after.readerId,'focus');
+  assert.equal(after.preferredIds['To Do now.md'],'tasks');
+  assert.deepEqual(after.notes,drafts.notes);
+  assert.deepEqual(after.draft,drafts.draft);
+  assert.deepEqual(after.taskDraft,drafts.taskDraft);
+  state.files.get('tasks').refusal = {status:403,reason:'insufficientFilePermissions'};
+  await keyboardOpen(page,tasks);
+  await page.locator('#reader-state.error').waitFor();
+  assert.equal(await page.locator('#reader-display').isHidden(),true);
+  assert.equal(await page.locator('#reader-content').textContent(),'');
+  await page.locator('#reader-back').click();
+  assert.equal(await page.locator(tasks).evaluate(el => el === document.activeElement),true);
+  assert.equal(state.patches,0);
+});
 
 test('pinned namesake opens in its own view, retains both drafts and source roles, and returns by keyboard', async t => {
   const {page, state} = await setup(t);

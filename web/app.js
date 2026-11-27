@@ -1,5 +1,5 @@
 import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, TEST_FILE, writableNote} from './core.js?v=0.14.0';
-import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.21.0';
+import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.22.0';
 import {driveError, markdownSnapshot, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.18.1';
 import {initReturnLink} from './return-link.js?v=0.20.0';
 import {initNoteReader} from './note-reader.js?v=0.18.0';
@@ -7,7 +7,7 @@ import {saveAttention, saveView} from './save-view.js?v=0.18.0';
 import {attentionDate, initAttention} from './attention.js?v=0.21.0';
 import {addTask, completeTask} from './complete-task.js?v=0.16.0';
 import {firstPlanAction, insertTask} from './today.js?v=0.16.0';
-import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.17.0';
+import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.22.0';
 import {initTaskEntry} from './task-entry.js?v=0.19.0';
 import {initNoteSearch} from './search-view.js?v=0.14.0';
 import {buildHandoffHistory} from './handoff.js?v=0.15.0';
@@ -17,6 +17,7 @@ import {leaveForReload, prepareReload, resumeReload} from './reload.js?v=0.6.1';
 const CLIENT = '327713401108-rdi4uv2duskfvn8d368i2ui56uhqsulo.apps.googleusercontent.com';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const $ = id => document.getElementById(id);
+const dayReaderButtons = document.querySelectorAll('[data-day-reader]');
 const compactScreen = window.matchMedia('(max-width: 680px)');
 $('page-menu').open = !compactScreen.matches;
 compactScreen.addEventListener('change', event => { $('page-menu').open = !event.matches; });
@@ -509,7 +510,7 @@ function syncSearchFiles() {
   search.setFiles(files);
   const chosen = files.find(file => file.id === device.readerId);
   const roleView = chosen?.note && chosen.id === preferredFile(device, TASKS) ? 'list' :
-    chosen?.plan ? 'plan' : 'text';
+    chosen?.plan && chosen.id !== preferredFile(device, NOW) ? 'plan' : 'text';
   reader.setFiles(files, device.readerId, roleView);
   const select = $('source-select'), previous = select.value;
   select.replaceChildren(new Option('Выбери заметку или план', ''));
@@ -603,7 +604,7 @@ function readerSelectionChanged() {
 function updateViewSaveButton() {
   const selected = reader.selection();
   const locked = busy || !session || Date.now() >= session.until || !navigator.onLine || storageFault;
-  const reason = selected && !readerNote(selected.fileId, selected.name) ? 'Для этого плана вид переключается только на экране.' :
+  const reason = selected && !readerNote(selected.fileId, selected.name) ? 'Вид этого источника можно переключать при чтении.' :
     selected?.name === TEST_FILE ? 'Для тестового шаблона доступно только временное переключение вида.' :
     selected && !selected.canEdit ? 'Для сохранения вида нужен доступ на редактирование.' : '';
   $('reader-save').disabled = Boolean(locked || !selected || reason);
@@ -644,6 +645,10 @@ function controls() {
   $('reader-pick').disabled = $('plan-pick').disabled || storageFault;
   $('reader-select').disabled = locked || !connected || !navigator.onLine || storageFault;
   $('today-plan-open').disabled = $('reader-select').disabled || !device.pinnedPlanId;
+  for (const button of dayReaderButtons) {
+    button.hidden = !preferredFile(device, button.dataset.dayReader);
+    button.disabled = $('reader-select').disabled;
+  }
   $('reader-refresh').hidden = !device.readerId;
   $('reader-refresh').disabled = locked || !connected || !navigator.onLine;
   $('plan-refresh').disabled = locked || !connected || !device.plan || !navigator.onLine;
@@ -1180,7 +1185,7 @@ function openTodayReader(source, origin) {
   const title = $('reader-title');
   title.focus({preventScroll: true});
   title.scrollIntoView({block: 'start'});
-  // Select only the reader ID. Opening a plan here never adds it to the editable note sources.
+  // Only the reader selection changes. Existing source roles and drafts stay bound to their files.
   if (device.readerId !== source.id) {
     const previous = device;
     device = {...device, readerId: source.id};
@@ -1198,6 +1203,13 @@ $('today-plan-open').onclick = () => {
   openTodayReader(device.plans?.find(plan => plan.id === id),
     () => device.pinnedPlanId === id ? $('today-plan-open') : null);
 };
+for (const button of dayReaderButtons) {
+  button.onclick = () => {
+    const name = button.dataset.dayReader;
+    const id = preferredFile(device, name);
+    if (id) openTodayReader({id, name}, () => preferredFile(device, name) === id ? button : null);
+  };
+}
 function openAttentionNote(id) {
   openTodayReader(device.notes?.find(note => note.id === id),
     () => $('today-attention').querySelector('button[data-file-id="' + CSS.escape(id) + '"]'));

@@ -104,8 +104,11 @@ function normalizeDevice(saved) {
     const selection = saved.readerId ?? saved.activeId;
     device.readerId = notes.has(selection) ? selection : device.notes[0].id;
   }
-  // A plan opened from Today can be the reader selection without becoming a note source.
-  if (plans.has(saved.readerId)) device.readerId = saved.readerId;
+  // Opening a known source from Today changes only the reader selection.
+  const readerName = device.noteNames[saved.readerId];
+  if (plans.has(saved.readerId) || (device.fileIds.includes(saved.readerId) && [NOW, TASKS].includes(readerName))) {
+    device.readerId = saved.readerId;
+  }
   for (const name of [NOW, TASKS, INBOX]) {
     const id = saved.preferredIds?.[name];
     if (validId(id) && device.noteNames[id] === name) device.preferredIds[name] = id;
