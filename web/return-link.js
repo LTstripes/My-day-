@@ -8,7 +8,8 @@ export function initReturnLink(button) {
   button.addEventListener('click', () => {
     const source = typeof origin === 'function' ? origin() : origin;
     const available = source?.isConnected && !source.closest('[inert]') &&
-      !source.matches(':disabled') && source.checkVisibility({visibilityProperty: true});
+      !source.matches(':disabled') && source.getClientRects().length > 0 &&
+      getComputedStyle(source).visibility === 'visible';
     const target = available ? source : fallback;
     clear();
     if (target) {
