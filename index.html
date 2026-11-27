@@ -73,9 +73,9 @@ footer { margin-top:20px; font-size:.85rem; }
   #today .day-head button { padding:8px 12px; }
 }
 </style>
-<script type="module" src="./web/app.js?v=0.21.0"></script>
+<script type="module" src="./web/app.js?v=0.22.0"></script>
 </head><body><main>
-<header class="masthead"><div><small>My Day · 0.21.0</small><h1>Мой день</h1></div><details class="page-menu" id="page-menu" open><summary>Разделы</summary><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a></nav></details></header>
+<header class="masthead"><div><small>My Day · 0.22.0</small><h1>Мой день</h1></div><details class="page-menu" id="page-menu" open><summary>Разделы</summary><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a></nav></details></header>
 <div class="connection-bar"><div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div><button id="connect" disabled>Подключить Google Drive</button></div>
 <section id="today" aria-labelledby="today-title">
   <div class="day-head"><div><p class="day-date muted"><time id="today-date"></time><span class="visually-hidden"> · <span id="today-zone"></span></span></p><h2 id="today-title" tabindex="-1">Сегодня</h2></div>
@@ -86,7 +86,7 @@ footer { margin-top:20px; font-size:.85rem; }
   <div class="day-grid">
     <article id="today-context" class="day-card"><div class="source-head"><h3>Текущий фокус</h3></div>
       <div data-body class="day-body"></div><p data-state class="meta muted source-state" role="status"></p>
-      <div class="source-foot"><button type="button" data-day-pick="Now.md" disabled>Выбрать Now.md</button><a data-open hidden target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>
+      <div class="source-foot"><button type="button" data-day-pick="Now.md" disabled>Выбрать Now.md</button><button type="button" data-day-reader="Now.md" aria-label="Открыть текущий фокус в My Day" hidden disabled>Открыть в My Day</button><a data-open hidden target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>
     </article>
     <article id="today-tasks" class="day-card"><div class="source-head"><h3>Дела на сегодня</h3></div>
       <div data-body class="day-body"></div><p data-state class="meta muted source-state" role="status"></p>
@@ -100,7 +100,7 @@ footer { margin-top:20px; font-size:.85rem; }
       </form>
       </details>
       <div data-receipt="task" hidden><p class="meta" role="status"></p><button type="button" class="secondary" aria-controls="receipt-detail">Открыть запись</button></div>
-      <div class="source-foot"><button type="button" data-day-pick="To Do now.md" disabled>Выбрать To Do now.md</button><a data-open hidden target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>
+      <div class="source-foot"><button type="button" data-day-pick="To Do now.md" disabled>Выбрать To Do now.md</button><button type="button" data-day-reader="To Do now.md" aria-label="Открыть список дел в My Day" hidden disabled>Открыть в My Day</button><a data-open hidden target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>
     </article>
     <article id="today-attention" class="day-card" hidden><h3>Требуют внимания</h3><ul></ul><p role="status" class="meta muted"></p></article>
     <article id="today-plan" class="day-card" hidden><div class="source-head"><h3>Ближайшее действие по плану</h3><small id="today-plan-source"></small></div>
