@@ -2,14 +2,14 @@ import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, 
 import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.22.0';
 import {driveError, markdownSnapshot, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.18.1';
 import {initReturnLink} from './return-link.js?v=0.20.0';
-import {initNoteReader} from './note-reader.js?v=0.25.0';
+import {initNoteReader} from './note-reader.js?v=0.26.0';
 import {saveAttention, saveView} from './save-view.js?v=0.18.0';
 import {attentionDate, initAttention} from './attention.js?v=0.23.0';
 import {addTask, completeTask, reopenTask} from './complete-task.js?v=0.23.0';
 import {firstPlanAction, insertTask} from './today.js?v=0.16.0';
 import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.23.0';
 import {initTaskEntry} from './task-entry.js?v=0.19.0';
-import {initNoteSearch} from './search-view.js?v=0.14.0';
+import {initNoteSearch} from './search-view.js?v=0.26.0';
 import {buildHandoffHistory} from './handoff.js?v=0.15.0';
 import {initReceipts, markRecord} from './receipts.js?v=0.20.0';
 import {leaveForReload, prepareReload, resumeReload} from './reload.js?v=0.6.1';
@@ -38,6 +38,7 @@ let resuming = false;
 const attention = initAttention($('today-attention'), openAttentionNote);
 const reader = initNoteReader(readerSelectionChanged);
 const readerReturn = initReturnLink($('reader-back'));
+let readerBackHash = '#today';
 let readerAttempt = null;
 // A single action may read the same ID through several roles. A Drive access
 // refusal invalidates every response for that ID until a new action starts.
@@ -47,6 +48,7 @@ const taskEntry = initTaskEntry({edit: editTaskDraft, discard: discardTaskDraft,
 const receipts = initReceipts(readReceipt);
 onTaskSourceChange(controls);
 const search = initNoteSearch({
+  openInReader: openSearchReader,
   run: action => run(action, 'search'),
   async read(file, signal) {
     const current = session;
@@ -1267,9 +1269,11 @@ $('reader-refresh').onclick = () => run(() => readReader(), 'reader');
 function readerNote(id, name) {
   return device.notes?.some(note => note.id === id && note.name === name);
 }
-function openTodayReader(source, origin) {
+function openContextReader(source, origin, fromSearch = false) {
   if (!source || $('reader-select').disabled) return;
-  readerReturn.remember(origin, $('today-title'));
+  readerBackHash = fromSearch ? '#search' : '#today';
+  $('reader-back').textContent = fromSearch ? 'К результату поиска' : 'К дню';
+  readerReturn.remember(origin, $(fromSearch ? 'search-query' : 'today-title'));
   if (location.hash !== '#note-reader') history.pushState(null, '', '#note-reader');
   const title = $('reader-title');
   title.focus({preventScroll: true});
@@ -1289,19 +1293,19 @@ function openTodayReader(source, origin) {
 }
 $('today-plan-open').onclick = () => {
   const id = device.pinnedPlanId;
-  openTodayReader(device.plans?.find(plan => plan.id === id),
+  openContextReader(device.plans?.find(plan => plan.id === id),
     () => device.pinnedPlanId === id ? $('today-plan-open') : null);
 };
 for (const button of dayReaderButtons) {
   button.onclick = () => {
     const name = button.dataset.dayReader;
     const id = preferredFile(device, name);
-    if (id) openTodayReader({id, name}, () => preferredFile(device, name) === id ? button : null);
+    if (id) openContextReader({id, name}, () => preferredFile(device, name) === id ? button : null);
   };
 }
 async function openAttentionNote(id, reschedule = false) {
   const attribute = reschedule ? 'data-reschedule-id' : 'data-file-id';
-  const opened = await openTodayReader(device.notes?.find(note => note.id === id),
+  const opened = await openContextReader(device.notes?.find(note => note.id === id),
     () => $('today-attention').querySelector('button[' + attribute + '="' + CSS.escape(id) + '"]'));
   if (!reschedule || !opened || reader.opened()?.meta.id !== id || document.activeElement !== $('reader-title') ||
       $('reader-back').hidden || location.hash !== '#note-reader') return;
@@ -1310,7 +1314,16 @@ async function openAttentionNote(id, reschedule = false) {
   editor.open = true;
   (input.disabled ? editor.querySelector('summary') : input).focus();
 }
-$('reader-back').addEventListener('click', () => history.replaceState(null, '', '#today'));
+async function openSearchReader(match) {
+  const source = sourcesFor(device).get(match.id);
+  if (source?.name !== match.name) return;
+  const opened = await openContextReader(source, match.origin, true);
+  const file = reader.opened();
+  if (!opened || file?.meta.id !== match.id || $('reader-back').hidden || readerBackHash !== '#search' ||
+      location.hash !== '#note-reader' || document.activeElement !== $('reader-title')) return;
+  reader.findText(match.query, file.meta.version === match.version ? match.offset : null);
+}
+$('reader-back').addEventListener('click', () => history.replaceState(null, '', readerBackHash));
 function saveNoteProperty(selected, operation, resultLine, write, messageForResult) {
   const current = session;
   const matches = () => session === current && !storageFault && navigator.onLine && !networkChanged &&

@@ -127,6 +127,8 @@ footer { margin-top:20px; font-size:.85rem; }
 <section id="search" aria-labelledby="search-title">
   <h2 id="search-title">Поиск по заметкам и планам</h2>
   <form id="search-form" role="search" aria-labelledby="search-title">
+    <label for="search-file">Где искать</label>
+    <select id="search-file" disabled><option value="">Все выбранные файлы</option></select>
     <label for="search-query">Слово или фраза из текста или названия</label>
     <div class="search-bar"><input id="search-query" type="search" autocomplete="off" spellcheck="false" disabled>
       <button id="search-submit" type="submit" disabled>Найти</button>
@@ -138,6 +140,7 @@ footer { margin-top:20px; font-size:.85rem; }
     <h3 id="search-detail-title" tabindex="-1"></h3><p id="search-position" class="muted meta"></p>
     <pre id="search-text" tabindex="0" aria-label="Текст файла"></pre>
     <div class="actions"><button id="search-back" class="secondary" type="button">К результатам</button>
+      <button id="search-open-reader" class="secondary" type="button" hidden disabled>Открыть в читателе</button>
       <button id="search-draft" class="secondary" type="button" hidden>К черновику</button>
       <a id="search-drive-link" target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>
   </article>
