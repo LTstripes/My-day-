@@ -85,6 +85,7 @@ export function initNoteReader(onSelectionChange = () => {}) {
   $('reader-full').onclick = () => { override = 'text'; render(); view.focus(); };
   return {
     setFiles, clear,
+    opened() { return current; },
     selection() {
       if (!current || (view.value === 'chart' && !validChart)) return null;
       const meta = current.meta;

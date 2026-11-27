@@ -1,9 +1,9 @@
 import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, TEST_FILE, writableNote} from './core.js?v=0.14.0';
 import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.15.0';
 import {driveError, markdownSnapshot, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.17.0';
-import {initNoteReader} from './note-reader.js?v=0.16.0';
-import {saveView} from './save-view.js?v=0.16.0';
-import {initAttention} from './attention.js?v=0.16.0';
+import {initNoteReader} from './note-reader.js?v=0.18.0';
+import {saveAttention, saveView} from './save-view.js?v=0.18.0';
+import {attentionDate, initAttention} from './attention.js?v=0.18.0';
 import {addTask, completeTask} from './complete-task.js?v=0.16.0';
 import {firstPlanAction, insertTask} from './today.js?v=0.16.0';
 import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.17.0';
@@ -30,7 +30,7 @@ let returnCheck = null;
 const planReads = new Map();
 const planCards = new Map();
 let resuming = false;
-const attention = initAttention($('today-attention'));
+const attention = initAttention($('today-attention'), openAttentionNote);
 const reader = initNoteReader(readerSelectionChanged);
 let readerAttempt = null;
 // A single action may read the same ID through several roles. A Drive access
@@ -555,8 +555,39 @@ function selectId(id, name) {
 function captureId() {
   return device.noteNames[device.activeId] === INBOX ? device.activeId : preferredFile(device, INBOX);
 }
+let attentionSnapshot = null;
+let savedAttention = null;
+function renderAttentionEditor() {
+  const opened = reader.opened();
+  if (opened === attentionSnapshot) return;
+  const details = $('reader-attention');
+  if (opened?.meta.id !== attentionSnapshot?.meta.id) details.open = false;
+  attentionSnapshot = opened;
+  savedAttention = opened ? attentionDate(opened.content) : null;
+  $('reader-attention-date').value = savedAttention?.day ?? '';
+  $('reader-attention-current').textContent = savedAttention?.invalid ? 'Текущую дату не удалось распознать.' :
+    savedAttention?.instant != null ? 'Точный срок: ' + new Date(savedAttention.instant).toLocaleString('ru-RU', {
+      dateStyle: 'medium', timeStyle: 'long'
+    }) : savedAttention?.day ? 'Сохранена календарная дата.' : 'Дата пока не задана.';
+  $('reader-attention-clear').hidden = !savedAttention;
+  $('reader-attention-status').textContent = '';
+}
+function updateAttentionButtons() {
+  const opened = reader.opened();
+  const input = $('reader-attention-date');
+  const reason = opened?.meta.name === TEST_FILE ? 'Для даты внимания выбери обычную заметку Markdown.' :
+    opened && !opened.meta.capabilities?.canEdit ? 'Для изменения даты нужен доступ на редактирование.' : '';
+  const locked = busy || !session || Date.now() >= session.until || !navigator.onLine || storageFault || !opened || reason;
+  input.disabled = Boolean(locked);
+  $('reader-attention-save').disabled = Boolean(locked || !input.value || !input.validity.valid || input.value === savedAttention?.day);
+  $('reader-attention-clear').disabled = Boolean(locked);
+  $('reader-attention-hint').textContent = reason || (savedAttention?.instant != null ?
+    'Сохранение календарной даты заменит точный срок.' : '');
+}
 function readerSelectionChanged() {
   $('reader-save-status').textContent = '';
+  renderAttentionEditor();
+  updateAttentionButtons();
   updateViewSaveButton();
 }
 function updateViewSaveButton() {
@@ -566,9 +597,10 @@ function updateViewSaveButton() {
     selected && !selected.canEdit ? 'Для сохранения вида нужен доступ на редактирование.' : '';
   $('reader-save').disabled = Boolean(locked || !selected || reason);
   $('reader-save-hint').textContent = reason;
-  $('reader-display').inert = busy === 'save-view';
+  $('reader-display').inert = busy === 'save-view' || busy === 'save-attention';
 }
 function controls() {
+  updateAttentionButtons();
   updateViewSaveButton();
   const locked = Boolean(busy || awaitingLogin || pickerWindow || resuming);
   const editingLocked = locked && busy !== 'search' && busy !== 'return' && busy !== 'plan' && busy !== 'reader';
@@ -1086,13 +1118,20 @@ $('reader-select').onchange = () => {
   else $('reader-select').value = device.readerId ?? '';
 };
 $('reader-refresh').onclick = () => run(() => readReader(), 'reader');
-$('reader-save').onclick = () => {
-  if ($('reader-save').disabled) return;
-  const selected = reader.selection(), current = session;
+function openAttentionNote(id) {
+  const note = device.notes?.find(item => item.id === id);
+  if (!note || $('reader-select').disabled) return;
+  if (location.hash !== '#note-reader') history.pushState(null, '', '#note-reader');
+  const title = $('reader-title');
+  title.focus({preventScroll: true});
+  title.scrollIntoView({block: 'start'});
+  run(() => readReader(id, device.readerId !== id, note.name), 'reader');
+}
+function saveNoteProperty(selected, operation, resultLine, write, messageForResult) {
+  const current = session;
   const matches = () => session === current && !storageFault && navigator.onLine && !networkChanged &&
     device.readerId === selected.fileId && device.notes?.some(note => note.id === selected.fileId && note.name === selected.name);
   run(async () => {
-    const resultLine = $('reader-save-status');
     const setMessage = (message, error = false) => {
       resultLine.textContent = message;
       resultLine.classList.toggle('error', error);
@@ -1106,22 +1145,43 @@ $('reader-save').onclick = () => {
     };
     setMessage('Сверяем с Drive…');
     try {
-      const {verified, already} = await saveView(selected, guarded);
+      const {verified, already} = await write(selected, guarded);
       if (!matches()) return;
       updateSources(verified);
       showPlanResult(verified);
       if (device.activeId === verified.meta.id) show(verified);
-      setMessage(already ? 'Этот вид уже сохранён в заметке.' : 'Вид сохранён в заметке и подтверждён чтением из Drive.');
+      setMessage(messageForResult(already));
     } catch (error) {
       if (!matches()) return;
-      if (error.reselect) reader.reset();
+      if (error.access === 'expired' || error.access === 'consent') { fail(error); return; }
+      if (error.reselect && operation === 'save-view') reader.reset();
       if (error.current) updateSources(error.current);
       if (error.access) applyReadError(selected.fileId, error, true);
       const message = errorMessage(error) + (error.uncertain ? ' Проверь файл в Drive или повтори сверку.' : '');
       setMessage(message, true);
       if ($('reader-display').hidden) status(message, true);
     }
-  }, 'save-view');
+  }, operation);
+}
+$('reader-save').onclick = () => {
+  if ($('reader-save').disabled) return;
+  saveNoteProperty(reader.selection(), 'save-view', $('reader-save-status'), saveView, already =>
+    already ? 'Этот вид уже сохранён в заметке.' : 'Вид сохранён в заметке и подтверждён чтением из Drive.');
+};
+function changeAttentionDate(date) {
+  const {meta} = reader.opened();
+  saveNoteProperty({fileId:meta.id, name:meta.name, version:meta.version, date}, 'save-attention',
+    $('reader-attention-status'), saveAttention, already => {
+      if (date === null) return already ? 'В заметке уже нет даты внимания.' : 'Дата снята.';
+      return already ? 'Эта дата уже сохранена в заметке.' : 'Дата сохранена в заметке.';
+    });
+}
+$('reader-attention-date').oninput = updateAttentionButtons;
+$('reader-attention-save').onclick = () => {
+  if (!$('reader-attention-save').disabled) changeAttentionDate($('reader-attention-date').value);
+};
+$('reader-attention-clear').onclick = () => {
+  if (!$('reader-attention-clear').disabled) changeAttentionDate(null);
 };
 $('plan-pick').onclick = () => chooseFile(undefined, 'plan');
 $('plan-refresh').onclick = () => run(() => readPlan(), 'plan');
