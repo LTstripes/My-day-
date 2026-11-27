@@ -10,6 +10,7 @@ import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskAc
 import {initTaskEntry} from './task-entry.js?v=0.19.0';
 import {initNoteSearch} from './search-view.js?v=0.14.0';
 import {buildHandoffHistory} from './handoff.js?v=0.15.0';
+import {initReceipts, markRecord} from './receipts.js?v=0.20.0';
 import {leaveForReload, prepareReload, resumeReload} from './reload.js?v=0.6.1';
 
 const CLIENT = '327713401108-rdi4uv2duskfvn8d368i2ui56uhqsulo.apps.googleusercontent.com';
@@ -39,6 +40,7 @@ let readerAttempt = null;
 const deniedFileReads = new Set();
 let readOnlyCaptureId = null;
 const taskEntry = initTaskEntry({edit: editTaskDraft, discard: discardTaskDraft, submit: submitTask, changed: controls});
+const receipts = initReceipts(readReceipt);
 onTaskSourceChange(controls);
 const search = initNoteSearch({
   run: action => run(action, 'search'),
@@ -206,13 +208,8 @@ function closeHandoffReader() {
 }
 function openHandoffReader(range) {
   if (!handoffAvailable() || !range) return;
-  const {text, offset} = handoff.readable;
-  const start = offset(range.start), end = offset(range.end);
-  if (start >= end) return;
-  const mark = document.createElement('mark');
-  mark.textContent = text.slice(start, end);
-  mark.tabIndex = -1;
-  $('preview').replaceChildren(text.slice(0, start), mark, text.slice(end));
+  const mark = markRecord($('preview'), handoff.readable, range);
+  if (!mark) return;
   $('handoff-back').hidden = false;
   mark.focus({preventScroll: true});
   mark.scrollIntoView({block: 'center'});
@@ -380,6 +377,7 @@ function showPlanResult(result) {
 function planFailed(id, error) {
   attention.unavailable(id);
   if (error.access === 'file') {
+    receipts.remove(id);
     deniedFileReads.add(id);
     if (id === device.readerId) reader.clear(errorMessage(error), true);
   }
@@ -631,6 +629,7 @@ function controls() {
   $('forget').disabled = editingLocked;
   sourceControls();
   search.setControls(connected, locked);
+  receipts.enable(connected && !locked && navigator.onLine);
   const canSendTask = connected && !locked && !storageFault && navigator.onLine;
   setTaskActionsEnabled(canSendTask);
   taskEntry.update(taskSource(), device.taskDraft, editingLocked, canSendTask);
@@ -666,6 +665,7 @@ function controls() {
 }
 
 function endSession() {
+  receipts.remove();
   if (pickerWindow) { pickerWindow.setVisible(false); pickerWindow = null; }
   session?.abort.abort();
   session = null;
@@ -724,15 +724,37 @@ function show(result, confirmedOp = null) {
   $('drive-link').href = 'https://drive.google.com/open?id=' + encodeURIComponent(result.meta.id);
   $('drive-link').hidden = false;
 }
-function finishDraft(message) {
+async function readReceipt(receipt) {
+  const {fileId, name} = receipt;
+  const current = session;
+  const retained = () => current && current === session && device.fileIds.includes(fileId) && device.noteNames[fileId] === name;
+  if (!retained()) return;
+  try {
+    const result = await snapshot(fileId, sessionRequest(current), name, {viewOnly:true});
+    if (!retained()) return;
+    if (Date.now() >= current.until) { expire(); return; }
+    if (!navigator.onLine) throw new Error('Нет сети. Подключись и снова открой запись.');
+    return result;
+  } catch (error) {
+    if (!retained()) return;
+    if (error.access) {
+      applyReadError(fileId, error, true);
+      controls();
+    }
+    throw new Error(errorMessage(error));
+  }
+}
+function finishDraft(message, verified) {
   const draft = device.draft;
   device.draft = null;
   if (!persist()) {
     device.draft = draft;
+    receipts.confirm('thought', verified, draft, false);
     status('Drive подтвердил запись. Не удалось очистить местный черновик.', true);
     return;
   }
   $('thought').value = '';
+  receipts.confirm('thought', verified, draft, true);
   status(message);
 }
 function showRead(result, message) {
@@ -742,7 +764,7 @@ function showRead(result, message) {
   const delivered = delivery === 'delivered';
   show(result, delivered ? draft.op : null);
   if (delivered) {
-    finishDraft('Запись уже есть в ' + result.meta.name + '. Доставка подтверждена без дубля.');
+    finishDraft('Запись уже есть в ' + result.meta.name + '. Доставка подтверждена без дубля.', result);
     return;
   }
   if (pending) {
@@ -1322,9 +1344,11 @@ function submitTask(place) {
       delete device.taskDraft;
       if (!persist()) {
         device.taskDraft = draft;
+        receipts.confirm('task', verified, draft, false);
         taskEntry.message('Drive подтвердил дело. Не удалось очистить местный черновик.', true);
         return;
       }
+      receipts.confirm('task', verified, draft, true);
       const message = already ? 'Дело уже есть в Drive. Повтор подтверждён без дубля.' :
         'Дело добавлено и подтверждено чтением из Drive.';
       taskEntry.message(message);
@@ -1456,7 +1480,7 @@ $('save').onclick = () => run(async () => {
   updateSources(verified);
   showPlanResult(verified);
   show(verified, draft.op);
-  finishDraft(already ? 'Запись уже была в Drive. Повтор подтверждён без дубля.' : 'Записано в ' + name + ' и подтверждено повторным чтением.');
+  finishDraft(already ? 'Запись уже была в Drive. Повтор подтверждён без дубля.' : 'Записано в ' + name + ' и подтверждено повторным чтением.', verified);
 });
 window.addEventListener('beforeunload', event => {
   if ((device.draft || device.taskDraft) && (!personal || storageFault)) { event.preventDefault(); event.returnValue = true; }
@@ -1473,6 +1497,9 @@ function syncSelection(previous) {
   listFiles();
   if (targetChanged) clearPreview();
   const before = sourcesFor(previous), retained = sourcesFor(device);
+  for (const id of previous.fileIds) {
+    if (!device.fileIds.includes(id) || previous.noteNames[id] !== device.noteNames[id]) receipts.remove(id);
+  }
   for (const id of planReads.keys()) {
     if (before.has(id) && !retained.has(id)) planReads.delete(id);
   }
