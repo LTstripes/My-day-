@@ -3,34 +3,34 @@ import {snapshot} from './drive.js?v=0.15.0';
 import {conditionalWrite, selectionError} from './conditional-write.js?v=0.16.0';
 import {insertTask, taskDelivery, todayTasks} from './today.js?v=0.15.0';
 
-function completedContent({content, line, date}, current) {
+function checkboxContent({content, line, date, version}, current, reopen) {
   const {items} = todayTasks(content, date);
   const item = items.find(entry => entry.lineIndex === line);
-  if (item?.kind !== 'open') {
-    throw selectionError(current, 'Выбери открытый флажок в списке дел.');
+  if (item?.kind !== (reopen ? 'done' : 'open')) {
+    throw selectionError(current, reopen ? 'Выбери выполненное дело в списке.' : 'Выбери открытый флажок в списке дел.');
   }
-  if (items.filter(entry => entry.text === item.text).length !== 1) {
+  if (!reopen && items.filter(entry => entry.text === item.text).length !== 1) {
     throw selectionError(current, 'В списке несколько пунктов с таким текстом. Открой источник и уточни нужный пункт.');
   }
-  // Keep the delimiters so mixed line endings, the BOM and all other bytes survive.
+  if (reopen && (typeof version !== 'string' || !version)) throw changedSelection(current);
+
+  // Locate the checkbox at its original row, including the BOM and original line endings.
   const lines = content.split(/(\r\n|[\r\n])/);
   const i = line * 2;
-  const marker = /^(?:\uFEFF)?[ \t]*(?:[-+*]|\d{1,9}[.)])[ \t]+\[ \]/.exec(lines[i]);
-  if (!marker) throw selectionError(current, 'Для этого оформления флажок можно отметить в источнике.');
-  const pos = marker[0].length - 2;
-  const offset = lines.slice(0, i).join('').length + pos;
-  const next = content.slice(0, offset) + 'x' + content.slice(offset + 1);
-  // A checkbox-shaped prefix can belong to a multiline HTML comment that ends on this line.
+  const marker = /^(?:\uFEFF)?[ \t]*(?:[-+*]|\d{1,9}[.)])[ \t]+\[([ xX])\]/.exec(lines[i]);
+  const unsupported = 'Для этого оформления измени флажок в источнике.';
+  const expectedMark = reopen ? /^[xX]$/ : /^ $/;
+  if (!marker || !expectedMark.test(marker[1])) throw selectionError(current, unsupported);
+  const offset = lines.slice(0, i).join('').length + marker[0].length - 2;
+  const replace = value => content.slice(0, offset) + value + content.slice(offset + 1);
+  const next = replace(reopen ? ' ' : 'x');
+  // Reject a checkbox-shaped prefix inside an HTML comment ending on the same line.
   const marked = todayTasks(next, date).items.find(entry => entry.lineIndex === line);
-  if (marked?.kind !== 'done' || marked.text !== item.text) {
-    throw selectionError(current, 'Для этого оформления флажок можно отметить в источнике.');
+  if (marked?.kind !== (reopen ? 'open' : 'done') || marked.text !== item.text) {
+    throw selectionError(current, unsupported);
   }
-  if (current.content === next || current.content === content.slice(0, offset) + 'X' + content.slice(offset + 1)) {
-    return {already: true};
-  }
-  if (current.content !== content) {
-    throw selectionError(current, 'Список изменился. Проверь обновлённые дела и выбери пункт ещё раз.');
-  }
+  if (current.content === next || (!reopen && current.content === replace('X'))) return {already: true};
+  if (current.content !== content || (version !== undefined && version !== current.meta.version)) throw changedSelection(current);
   return {already: false, content: next};
 }
 
@@ -44,16 +44,27 @@ function changedSelection(current) {
   return error;
 }
 
-export async function completeTask(selection, request) {
+async function changeCheckbox(selection, request, reopen) {
   const current = await readList(selection.fileId, request);
-  const next = completedContent(selection, current);
+  const next = checkboxContent(selection, current, reopen);
   if (next.already) return {verified: current, already: true};
   const {verified, changed} = await conditionalWrite(current, next.content, request, () => readList(selection.fileId, request));
-  if (changed) throw changedSelection(verified);
+  if (changed) {
+    if (reopen && verified.content === next.content) return {verified, already: true};
+    throw changedSelection(verified);
+  }
   if (verified.content !== next.content) {
     throw selectionError(verified, 'Drive не подтвердил ожидаемое содержимое после записи. Проверь обновлённый список.');
   }
   return {verified, already: false};
+}
+
+export function completeTask(selection, request) {
+  return changeCheckbox(selection, request, false);
+}
+
+export function reopenTask(selection, request) {
+  return changeCheckbox(selection, request, true);
 }
 
 function isTaskDelivered(file, draft) {
