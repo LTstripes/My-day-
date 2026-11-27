@@ -35,11 +35,12 @@ export function initNoteFind() {
       }
     }
   }
-  function find() {
+  function find(offset) {
     readable ??= readableNote(file.content);
     const match = searchNote('', file.content, input.value, hitLimit);
     hits = match.hits;
     total = match.total;
+    if (offset !== undefined) index = hits.findIndex(hit => hit.start === offset);
     index = Math.max(0, Math.min(index, hits.length - 1));
     render();
   }
@@ -59,12 +60,18 @@ export function initNoteFind() {
     content.hidden = false;
   }
 
+  function showResults(offset) {
+    content.hidden = true;
+    results.hidden = false;
+    find(offset);
+  }
   details.addEventListener('toggle', () => {
     if (details.open && file) {
-      content.hidden = true;
-      results.hidden = false;
-      find();
-      input.focus({preventScroll: true});
+      // An explicit search can already have rendered before this native event arrives.
+      if (results.hidden) {
+        showResults();
+        input.focus({preventScroll: true});
+      }
     } else {
       details.open = false;
       clearResults();
@@ -93,6 +100,13 @@ export function initNoteFind() {
 
   return {
     isOpen() { return Boolean(file && details.open); },
+    findText(query, offset = null) {
+      if (!file) return false;
+      input.value = query;
+      details.open = true;
+      showResults(offset);
+      return true;
+    },
     setFile(result) {
       const sameFile = result && file && file.meta.id === result.meta.id && file.meta.name === result.meta.name;
       if (!sameFile) {

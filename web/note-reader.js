@@ -1,6 +1,6 @@
 import {noteView} from './note-views.js?v=0.16.0';
 import {mountChart} from './note-chart.js?v=0.16.0';
-import {initNoteFind} from './note-find.js?v=0.25.0';
+import {initNoteFind} from './note-find.js?v=0.26.0';
 
 const $ = id => document.getElementById(id);
 const make = (tag, text) => {
@@ -87,7 +87,7 @@ export function initNoteReader(onSelectionChange = () => {}) {
   view.onchange = () => { override = view.value; render(); };
   $('reader-full').onclick = () => { override = 'text'; render(); view.focus(); };
   return {
-    setFiles, clear,
+    setFiles, clear, findText: find.findText,
     loading(id) {
       const message = 'Читаем заметку из Drive…';
       if (id !== sourceId || !current || !find.isOpen()) { clear(message); return; }
