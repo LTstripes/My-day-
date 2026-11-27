@@ -6,7 +6,7 @@ export function initTaskEntry({edit, discard, submit, changed}) {
   const form = byId('task-add-form'), text = byId('task-text'), select = byId('task-place');
   const button = byId('task-add'), clear = byId('task-discard'), hint = byId('task-status');
   let key = '', shownId = '', placesError = '', notice = '', isError = false;
-  let hadDraft = false, previousAccess;
+  let hadDraft = false, previousAccess, previousDate;
 
   function message(value = '', error = false) {
     notice = value;
@@ -39,6 +39,9 @@ export function initTaskEntry({edit, discard, submit, changed}) {
     const next = source ? [source.fileId, source.version, source.date].join('/') : '';
     if (key !== next) {
       const previousError = placesError;
+      const chosen = draft?.fileId === source?.fileId && previousDate === source?.date && select.value
+        ? select.selectedOptions[0].text : '';
+      previousDate = source?.date;
       key = next;
       placesError = '';
       select.replaceChildren();
@@ -48,7 +51,8 @@ export function initTaskEntry({edit, discard, submit, changed}) {
           const {choices, defaultId} = taskPlaces(source.content, source.date);
           if (!defaultId) select.add(new Option('Выбери раздел', ''));
           for (const {id, label} of choices) select.add(new Option(label, id));
-          select.value = defaultId ?? '';
+          const previousChoice = chosen ? choices.find(choice => choice.label === chosen) : null;
+          select.value = previousChoice?.id ?? defaultId ?? '';
           byId('task-place-field').hidden = Boolean(defaultId);
         } catch (error) { placesError = error.message; }
       }
