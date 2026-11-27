@@ -8,7 +8,7 @@ import {attentionDate, initAttention} from './attention.js?v=0.23.0';
 import {addTask, completeTask, reopenTask} from './complete-task.js?v=0.23.0';
 import {firstPlanAction, insertTask} from './today.js?v=0.16.0';
 import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.23.0';
-import {initTaskEntry} from './task-entry.js?v=0.19.0';
+import {initTaskEntry} from './task-entry.js?v=0.27.0';
 import {initNoteSearch} from './search-view.js?v=0.26.0';
 import {buildHandoffHistory} from './handoff.js?v=0.15.0';
 import {initReceipts, markRecord} from './receipts.js?v=0.20.0';
@@ -18,6 +18,7 @@ const CLIENT = '327713401108-rdi4uv2duskfvn8d368i2ui56uhqsulo.apps.googleusercon
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const $ = id => document.getElementById(id);
 const dayReaderButtons = document.querySelectorAll('[data-day-reader]');
+const taskDraftShortcuts = [$('today-task-draft'), $('search-task-draft')];
 const compactScreen = window.matchMedia('(max-width: 680px)');
 $('page-menu').open = !compactScreen.matches;
 compactScreen.addEventListener('change', event => { $('page-menu').open = !event.matches; });
@@ -304,10 +305,7 @@ $('handoff-task-draft').onclick = async () => {
       state.textContent = errorMessage(error);
     }
   }, 'answer-to-task');
-  if (saved && device.taskDraft?.fileId === fileId && !$('task-text').disabled) {
-    $('task-text').focus({preventScroll:true});
-    $('task-entry').scrollIntoView({block:'center'});
-  }
+  if (saved && device.taskDraft?.fileId === fileId) taskEntry.focusDraft();
 };
 $('handoff-back').onclick = () => {
   if (!handoffAvailable()) return;
@@ -731,6 +729,10 @@ function controls() {
   updateTaskPhraseControls(taskFile, canSendTask);
   $('search-draft').hidden = !draft;
   $('search-draft').disabled = editingLocked;
+  for (const shortcut of taskDraftShortcuts) {
+    shortcut.hidden = !device.taskDraft;
+    shortcut.disabled = editingLocked;
+  }
   $('pick').disabled = locked || !connected || !pickerReady;
   $('plan-pick').disabled = $('pick').disabled || !navigator.onLine;
   $('reader-pick').disabled = $('plan-pick').disabled || storageFault;
@@ -1585,6 +1587,11 @@ $('library-capture-back').onclick = () => {
   focusDraft();
 };
 $('search-draft').onclick = focusDraft;
+for (const shortcut of taskDraftShortcuts) {
+  shortcut.onclick = () => {
+    if (device.taskDraft && !shortcut.disabled) taskEntry.focusDraft();
+  };
+}
 $('today-capture').onclick = async () => {
   if (device.draft) { openTodayCapture(); return; }
   const current = session;

@@ -2,7 +2,7 @@ import {taskPlaces} from './today.js?v=0.15.0';
 
 export function initTaskEntry({edit, discard, submit, changed}) {
   const byId = id => document.getElementById(id);
-  const entry = byId('task-entry');
+  const entry = byId('task-entry'), summary = entry.querySelector('summary');
   const form = byId('task-add-form'), text = byId('task-text'), select = byId('task-place');
   const button = byId('task-add'), clear = byId('task-discard'), hint = byId('task-status');
   let key = '', shownId = '', placesError = '', notice = '', isError = false;
@@ -24,6 +24,8 @@ export function initTaskEntry({edit, discard, submit, changed}) {
   };
   function update(source, draft, locked, canSend) {
     entry.hidden = form.hidden = !source?.canEdit && !draft;
+    const title = draft ? 'Черновик дела' : 'Новое дело';
+    if (summary.textContent !== title) summary.textContent = title;
     const fileId = draft?.fileId ?? source?.fileId ?? '';
     const access = source?.canEdit;
     if (fileId !== shownId) {
@@ -75,5 +77,14 @@ export function initTaskEntry({edit, discard, submit, changed}) {
     hint.textContent = notice || placesError || fallback;
     hint.classList.toggle('error', isError || Boolean(placesError));
   }
-  return {update, message};
+  function focusDraft() {
+    if (entry.hidden) return;
+    entry.open = true;
+    const target = !text.disabled && !text.readOnly ? text :
+      !select.disabled && !byId('task-place-field').hidden && !select.value ? select :
+      button.disabled ? summary : button;
+    target.focus({preventScroll:true});
+    entry.scrollIntoView({block:'center'});
+  }
+  return {update, message, focusDraft};
 }

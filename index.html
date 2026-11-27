@@ -78,13 +78,13 @@ footer { margin-top:20px; font-size:.85rem; }
   #today .day-head button { padding:8px 12px; }
 }
 </style>
-<script type="module" src="./web/app.js?v=0.26.0"></script>
+<script type="module" src="./web/app.js?v=0.27.0"></script>
 </head><body><main>
-<header class="masthead"><div><small>My Day · 0.26.0</small><h1>Мой день</h1></div><details class="page-menu" id="page-menu" open><summary>Разделы</summary><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a></nav></details></header>
+<header class="masthead"><div><small>My Day · 0.27.0</small><h1>Мой день</h1></div><details class="page-menu" id="page-menu" open><summary>Разделы</summary><nav aria-label="Разделы страницы"><a href="#plans">Планы</a><a href="#search">Поиск</a><a href="#library">Мои заметки</a><a href="#connection">Подключение</a></nav></details></header>
 <div class="connection-bar"><div id="status" class="status" role="status" aria-live="polite">Загружаем библиотеки Google…</div><button id="connect" disabled>Подключить Google Drive</button></div>
 <section id="today" aria-labelledby="today-title">
   <div class="day-head"><div><p class="day-date muted"><time id="today-date"></time><span class="visually-hidden"> · <span id="today-zone"></span></span></p><h2 id="today-title" tabindex="-1">Сегодня</h2></div>
-    <div class="actions"><button id="today-capture" aria-controls="today-capture-slot" aria-expanded="false" disabled>Записать мысль</button><button id="today-refresh" class="secondary" disabled>Обновить обзор</button><button id="today-handoff" class="secondary" aria-controls="handoff-queue" hidden>К помощнику</button></div>
+    <div class="actions"><button id="today-capture" aria-controls="today-capture-slot" aria-expanded="false" disabled>Записать мысль</button><button id="today-task-draft" type="button" class="secondary" aria-controls="task-entry" hidden disabled>К черновику дела</button><button id="today-refresh" class="secondary" disabled>Обновить обзор</button><button id="today-handoff" class="secondary" aria-controls="handoff-queue" hidden>К помощнику</button></div>
   </div>
   <div id="today-capture-slot" hidden><button id="today-capture-close" class="secondary" type="button">Свернуть</button></div>
   <div data-receipt="thought" hidden><p class="meta" role="status"></p><button type="button" class="secondary" aria-controls="receipt-detail">Открыть запись</button></div>
@@ -141,7 +141,8 @@ footer { margin-top:20px; font-size:.85rem; }
     <pre id="search-text" tabindex="0" aria-label="Текст файла"></pre>
     <div class="actions"><button id="search-back" class="secondary" type="button">К результатам</button>
       <button id="search-open-reader" class="secondary" type="button" hidden disabled>Открыть в читателе</button>
-      <button id="search-draft" class="secondary" type="button" hidden>К черновику</button>
+      <button id="search-draft" class="secondary" type="button" hidden>К черновику мысли</button>
+      <button id="search-task-draft" class="secondary" type="button" aria-controls="task-entry" hidden disabled>К черновику дела</button>
       <a id="search-drive-link" target="_blank" rel="noopener noreferrer">Открыть в Drive</a></div>
   </article>
 </section>
