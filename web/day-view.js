@@ -6,7 +6,32 @@ const panels = new Map([
   [NOW, {element: document.getElementById('today-context')}],
   [TASKS, {element: document.getElementById('today-tasks')}]
 ]);
+const finder = document.getElementById('today-task-find');
+const query = document.getElementById('today-task-query');
+const matches = document.getElementById('today-task-matches');
 let localDate = '', timeZone = '', midnightTimer;
+
+function folded(text) {
+  return text.normalize('NFC').toLowerCase().replaceAll('ё', 'е').replace(/\s+/gu, ' ');
+}
+
+query.oninput = () => render(TASKS, panels.get(TASKS));
+query.onkeydown = event => {
+  if (event.isComposing) return;
+  if (event.key === 'Enter') event.preventDefault();
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    finder.open = false;
+    finder.querySelector('summary').focus();
+  }
+};
+finder.ontoggle = () => {
+  if (finder.open && !finder.hidden) query.focus({preventScroll: true});
+  if (!finder.open && query.value) {
+    query.value = '';
+    render(TASKS, panels.get(TASKS));
+  }
+};
 
 let complete, onSourceChange, actionsEnabled = false;
 export function onTaskSourceChange(handler) {
@@ -75,7 +100,19 @@ function render(name, panel) {
   const keepOpen = Boolean(sameList && previous.open);
   const keepFocus = sameList && previous.contains(document.activeElement);
   body.replaceChildren();
-  if (name === TASKS) heading.textContent = 'Дела на сегодня';
+  if (name === TASKS) {
+    heading.textContent = 'Дела на сегодня';
+    if (content == null || panel.filterDate !== localDate || panel.filterFile !== id) {
+      finder.open = false;
+      panel.filterDate = localDate;
+      panel.filterFile = content == null ? null : id;
+      query.value = '';
+    }
+    if (content == null) {
+      finder.hidden = true;
+      matches.textContent = '';
+    }
+  }
   if (content != null) {
     if (name === NOW) {
       body.textContent = nowContext(content) || 'В заметке пока нет текста.';
@@ -83,8 +120,13 @@ function render(name, panel) {
       const {items, selected, unsupported} = todayTasks(content, localDate);
       heading.textContent = selected ? 'Дела на сегодня' : 'Список дел';
       const source = panel.canEdit && !error ? {fileId: id, date: localDate, version: panel.version, content} : null;
-      const visible = items.filter(entry => entry.kind !== 'done');
-      const done = items.filter(entry => entry.kind === 'done');
+      finder.hidden = items.length === 0;
+      const term = finder.open && items.length ? folded(query.value.trim()) : '';
+      const filtered = term ? items.filter(entry => folded(entry.text).includes(term)) : items;
+      const count = 'Найдено: ' + filtered.length + ' из ' + items.length + '.';
+      matches.textContent = term ? (filtered.length ? count : 'Совпадений нет.') : '';
+      const visible = filtered.filter(entry => entry.kind !== 'done');
+      const done = filtered.filter(entry => entry.kind === 'done');
       if (visible.length) {
         const list = document.createElement('ul');
         for (const entry of visible) {
@@ -102,18 +144,20 @@ function render(name, panel) {
           list.append(item);
         }
         body.append(list);
-      } else if (unsupported) {
+      } else if (!term && unsupported) {
         body.textContent = done.length ? 'В заметке есть текст вне списка. Полный текст доступен в Drive.' :
           'Формат списка не распознан. Открой источник в Drive, чтобы увидеть текст.';
-      } else if (items.length) {
+      } else if (!term && items.length) {
         body.textContent = 'Все задачи в списке выполнены.';
-      } else {
+      } else if (!term) {
         body.textContent = selected ? 'В разделе дня нет пунктов списка.' : 'Нет пунктов для показа сегодня.';
       }
-      if (done.length) {
+      // Keep the disclosure state while a query temporarily hides every completed item.
+      if (items.some(entry => entry.kind === 'done')) {
         const details = completedTasks(done, id, keepOpen, source);
+        details.hidden = !done.length;
         body.append(details);
-        if (keepFocus) details.querySelector('summary').focus({preventScroll: true});
+        if (keepFocus && !details.hidden) details.querySelector('summary').focus({preventScroll: true});
       }
     }
   }
