@@ -8,6 +8,16 @@ let browser;
 before(async () => { browser = await chromium.launch(live ? {channel: 'chrome'} : {}); });
 after(async () => { await browser?.close(); });
 
+async function openAttentionPage(ctx, open) {
+  if (!live) return open();
+  const site = 'https://ltstripes.github.io/My-day-/';
+  await ctx.route(site + '**', route => route.continue());
+  const page = await ctx.newPage();
+  await page.goto(site);
+  await page.getByText(releaseLabel, {exact:true}).waitFor();
+  return page;
+}
+
 test('Today reads only selected notes, refreshes an inactive date, and drops revoked or forgotten content', async t => {
   const {ctx, state, open} = await fixture(browser, t, {serviceWorkers:'block', timezoneId:'Europe/Moscow'});
   const body = date => '---\nmyday_attention: ' + date + '\n---\nТолько синтетический текст.';
@@ -15,14 +25,7 @@ test('Today reads only selected notes, refreshes an inactive date, and drops rev
   state.files.set('upcoming', file('Забрать образец.md', '2026-11-30'));
   state.files.set('future', file('Следующая встреча.md', '2027-01-30'));
   state.files.set('unused', file('Посторонняя заметка.md', '2026-11-26'));
-  let page;
-  if (live) {
-    const site = 'https://ltstripes.github.io/My-day-/';
-    await ctx.route(site + '**', route => route.continue());
-    page = await ctx.newPage();
-    await page.goto(site);
-    await page.getByText(releaseLabel, {exact:true}).waitFor();
-  } else page = await open();
+  const page = await openAttentionPage(ctx, open);
   page.setDefaultTimeout(6500);
   await page.clock.setFixedTime(new Date('2026-11-26T15:00:00Z'));
   await firstFile(page, true);
@@ -86,4 +89,66 @@ test('attention orders overdue dates first and opens the selected namesake by id
   await button.focus();
   await button.press('Enter');
   assert.equal(await panel.getAttribute('data-opened'), 'note-4');
+});
+
+test('attention filters locally, keeps the chosen group across refresh and midnight, and resets after disconnect', async t => {
+  const {ctx, state, open} = await fixture(browser, t, {serviceWorkers:'block', timezoneId:'Europe/Moscow'});
+  const text = day => '---\nmyday_attention: ' + day + '\n---\nТестовый маршрут.';
+  state.files.set('west', {name:'Маршрут.md', text:text('2026-11-25'), version:1});
+  state.files.set('east', {name:'Маршрут.md', text:text('2026-11-26'), version:1});
+  const page = await openAttentionPage(ctx, open);
+  page.setDefaultTimeout(6500);
+  await page.clock.setFixedTime(new Date('2026-11-26T15:00:00Z'));
+  await firstFile(page, true);
+  for (const id of ['east', 'west']) {
+    await page.evaluate(id => { pickTest.id = id; }, id);
+    await page.locator('#reader-pick').click();
+    await page.locator('#reader-link[href$="=' + id + '"]').waitFor();
+  }
+  const panel = page.locator('#today-attention');
+  const filter = panel.getByLabel('Показать'), empty = panel.locator('#today-attention-empty');
+  const ids = () => panel.locator('button[data-file-id]').evaluateAll(buttons => buttons.map(item => item.dataset.fileId));
+  let requests = state.calls.length;
+  assert.deepEqual(await ids(), ['west', 'east']);
+  await filter.selectOption('overdue');
+  assert.deepEqual(await ids(), ['west']);
+  await filter.selectOption('soon');
+  await empty.filter({hasText:'Скоро'}).waitFor();
+  assert(await filter.isVisible());
+  assert.deepEqual(await ids(), []);
+  await filter.selectOption('today');
+  assert.deepEqual(await ids(), ['east']);
+  assert(await empty.isHidden());
+  assert.equal(state.calls.length, requests);
+
+  await panel.getByRole('button', {name:/Перенести/}).click();
+  await page.locator('#reader-link[href$="=east"]').waitFor();
+  await page.locator('#reader-attention-date:focus').waitFor();
+  await page.locator('#reader-back').press('Enter');
+  assert(await panel.locator('[data-reschedule-id="east"]').evaluate(el => el === document.activeElement));
+
+  const east = state.files.get('east');
+  east.text = text('2026-11-27');
+  east.version++;
+  await page.locator('#today-refresh').click();
+  await page.waitForFunction(() => !document.getElementById('today-refresh').disabled);
+  await empty.filter({hasText:'Сегодня'}).waitFor();
+  assert.equal(await filter.inputValue(), 'today');
+  requests = state.calls.length;
+  await page.clock.setFixedTime(new Date('2026-11-27T15:00:00Z'));
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  assert.deepEqual(await ids(), ['east']);
+  assert(await empty.isHidden());
+  await filter.selectOption('');
+  assert.deepEqual(await ids(), ['west', 'east']);
+  await filter.selectOption('overdue');
+  assert.equal(state.calls.length, requests);
+  await ctx.setOffline(true);
+  await panel.waitFor({state:'hidden'});
+  assert.equal(await filter.inputValue(), 'overdue');
+  await ctx.setOffline(false);
+  await page.locator('#disconnect').click();
+  await panel.waitFor({state:'hidden'});
+  assert.equal(await filter.inputValue(), '');
+  assert.equal(state.patches, 0);
 });

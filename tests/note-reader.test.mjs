@@ -176,3 +176,36 @@ test('find updates within one file and clears the search after access loss or a 
   assert.equal(await query.inputValue(),'');
   assert.equal(state.patches,0);
 });
+
+test('the library filters connected names locally without changing the opened note', async t => {
+  const {page,pick,panel,state} = await prepare(t);
+  state.files.set('tree-west',{name:'Ёлка.md',text:'# Западный склон\n',version:1});
+  state.files.set('tree-east',{name:'Ёлка.md',text:'# Восточный склон\n',version:1});
+  for (const id of ['tree-west','tree-east','trip']) {
+    await pick(id);
+    await page.locator('#reader-link[href$="='+id+'"]').waitFor();
+  }
+  const input = page.locator('#reader-name-filter'), select = page.locator('#reader-select');
+  const before = state.mediaReads.length;
+  await input.fill('елк');
+  assert.equal(await select.locator('option').count(),3);
+  assert.match(await select.locator('option[value="tree-east"]').textContent(),/Ёлка\.md.*tree-east/);
+  assert.match(await select.locator('option[value="tree-west"]').textContent(),/Ёлка\.md.*tree-west/);
+  await panel.getByText('Скачать карту озера').waitFor();
+  assert.equal((await saved(page)).readerId,'trip');
+  assert.equal(await page.locator('#reader-view').inputValue(),'plan');
+  await input.fill('несуществующее название');
+  await page.locator('#reader-name-status').getByText('Нет файлов с таким названием.').waitFor();
+  assert.equal(await select.locator('option').count(),1);
+  assert.equal(state.mediaReads.length,before);
+  await input.fill('ЁЛКА');
+  await select.selectOption('tree-east');
+  await panel.getByText(/Восточный склон/).waitFor();
+  assert.equal(await input.inputValue(),'ЁЛКА');
+  assert.equal(await select.inputValue(),'tree-east');
+  assert.deepEqual(state.mediaReads.slice(before),['tree-east']);
+  await page.locator('#disconnect').click();
+  assert.equal(await input.inputValue(),'');
+  assert.equal(await input.isDisabled(),true);
+  assert.equal(state.patches,0);
+});

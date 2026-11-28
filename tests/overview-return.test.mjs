@@ -21,6 +21,7 @@ async function visibility(page, hidden) {
 
 async function setup(t, time = '2026-11-27T15:00:00+03:00') {
   const {ctx, state, open} = await fixture(browser, t, {serviceWorkers:'block', timezoneId:'Europe/Moscow'});
+  await ctx.clock.setFixedTime(new Date(time));
   const file = (id, name, text) => state.files.set(id, {name, text, version:1});
   file('now','Now.md','# Now\nПервый фокус');
   file('tasks','To Do now.md','## Сегодня\n- Купить чай\n## 2026-11-27\n- Собрать карту\n## 2026-11-28\n- Проверить билеты\n');
@@ -36,7 +37,6 @@ async function setup(t, time = '2026-11-27T15:00:00+03:00') {
     await page.goto(origin);
   } else page = await open();
   await page.getByText(releaseLabel,{exact:true}).waitFor();
-  await page.clock.setFixedTime(new Date(time));
   await firstFile(page, true);
   const pick = async (id, control, ready) => {
     await page.evaluate(id => { pickTest.id = id; }, id);
