@@ -2,12 +2,12 @@ import {INBOX, NOW, readableNote, recordConflictMessage, recordDelivery, TASKS, 
 import {DEVICE_KEY, LEGACY_DRAFT, newDevice, preferredFile, readDevice, readDraft, validId, validPickerKey, validProject, withoutSource} from './device.js?v=0.22.0';
 import {driveError, markdownSnapshot, planSnapshot, saveDraft, snapshot} from './drive.js?v=0.18.1';
 import {initReturnLink} from './return-link.js?v=0.20.0';
-import {initNoteReader} from './note-reader.js?v=0.26.0';
+import {initNoteReader} from './note-reader.js?v=0.28.0';
 import {saveAttention, saveView} from './save-view.js?v=0.18.0';
-import {attentionDate, initAttention} from './attention.js?v=0.23.0';
+import {attentionDate, initAttention} from './attention.js?v=0.28.0';
 import {addTask, completeTask, reopenTask} from './complete-task.js?v=0.23.0';
 import {firstPlanAction, insertTask} from './today.js?v=0.16.0';
-import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.23.0';
+import {clearDay, dayFileFailed, onTaskCompletion, onTaskSourceChange, setTaskActionsEnabled, showDayFile, syncDaySources, taskSource, updateDayDate} from './day-view.js?v=0.28.0';
 import {initTaskEntry} from './task-entry.js?v=0.27.0';
 import {initNoteSearch} from './search-view.js?v=0.26.0';
 import {buildHandoffHistory} from './handoff.js?v=0.15.0';
@@ -736,7 +736,7 @@ function controls() {
   $('pick').disabled = locked || !connected || !pickerReady;
   $('plan-pick').disabled = $('pick').disabled || !navigator.onLine;
   $('reader-pick').disabled = $('plan-pick').disabled || storageFault;
-  $('reader-select').disabled = locked || !connected || !navigator.onLine || storageFault;
+  $('reader-select').disabled = $('reader-name-filter').disabled = locked || !connected || !navigator.onLine || storageFault;
   $('today-plan-open').disabled = $('reader-select').disabled || !device.pinnedPlanId;
   for (const button of dayReaderButtons) {
     button.hidden = !preferredFile(device, button.dataset.dayReader);
@@ -1777,7 +1777,7 @@ window.addEventListener('offline', () => {
   for (const id of dayIds().filter(Boolean)) dayFileFailed(id, new TypeError(), 'Нет сети. После подключения обнови обзор.');
   clearPlans('Нет сети. После подключения обнови план или обзор.', true);
   readerAttempt = null;
-  attention.clear();
+  attention.clear({preserveFilter: true});
   if (device.readerId) reader.clear('Нет сети. После подключения обнови заметку.', true);
   controls();
   if (returnCheck) fail(new Error('Нет сети. Подключись к интернету и нажми «Обновить», чтобы проверить ответ.'));

@@ -3,6 +3,7 @@ import {mountChart} from './note-chart.js?v=0.16.0';
 import {initNoteFind} from './note-find.js?v=0.26.0';
 
 const $ = id => document.getElementById(id);
+const titleKey = name => name.normalize('NFC').toLocaleLowerCase('ru').replaceAll('ё', 'е').replace(/\s+/gu, ' ').trim();
 const make = (tag, text) => {
   const node = document.createElement(tag);
   node.textContent = text;
@@ -13,6 +14,8 @@ export function initNoteReader(onSelectionChange = () => {}) {
   const select = $('reader-select'), view = $('reader-view'), content = $('reader-content');
   const state = $('reader-state'), link = $('reader-link');
   const find = initNoteFind();
+  const nameFilter = $('reader-name-filter'), nameStatus = $('reader-name-status');
+  let knownFiles = [], nameCounts = new Map();
   let sourceId = null, sourceName = '', defaultView = 'text', override = null, current = null;
   let chartDraft = null, validChart = null;
 
@@ -67,6 +70,19 @@ export function initNoteReader(onSelectionChange = () => {}) {
     state.textContent = message || (sourceId ? 'Подключи Drive, чтобы прочитать заметку.' : '');
     state.classList.toggle('error', error);
   }
+  function showFileChoices() {
+    const term = titleKey(nameFilter.value);
+    const shown = term ? knownFiles.filter(file => titleKey(file.name).includes(term)) : knownFiles;
+    select.replaceChildren(new Option('Выбери заметку', ''));
+    for (const file of shown) {
+      const duplicate = nameCounts.get(file.name) > 1;
+      select.add(new Option(duplicate ? file.name + ' · ID ' + file.id : file.name, file.id));
+    }
+    select.value = shown.some(file => file.id === sourceId) ? sourceId : '';
+    nameStatus.hidden = !term;
+    nameStatus.textContent = term ? (shown.length ? 'Найдено файлов: ' + shown.length + '.' : 'Нет файлов с таким названием.') : '';
+  }
+  nameFilter.oninput = showFileChoices;
   function setFiles(files, id, roleView) {
     const chosen = files.find(file => file.id === id);
     const changed = sourceId !== (chosen?.id ?? null) || sourceName !== (chosen?.name ?? '');
@@ -74,12 +90,11 @@ export function initNoteReader(onSelectionChange = () => {}) {
     sourceName = chosen?.name ?? '';
     const roleChanged = defaultView !== roleView;
     defaultView = roleView;
-    select.replaceChildren(new Option('Выбери заметку', ''));
-    for (const file of files) {
-      const duplicate = files.some(other => other.id !== file.id && other.name === file.name);
-      select.add(new Option(duplicate ? file.name + ' · ID ' + file.id : file.name, file.id));
-    }
-    select.value = sourceId ?? '';
+    knownFiles = files;
+    nameCounts = new Map();
+    for (const file of files) nameCounts.set(file.name, (nameCounts.get(file.name) ?? 0) + 1);
+    if (!files.length) nameFilter.value = '';
+    showFileChoices();
     $('reader-choices').hidden = !files.length;
     if (changed) { override = null; chartDraft = null; clear(); }
     else if (roleChanged && current) render();
@@ -101,7 +116,13 @@ export function initNoteReader(onSelectionChange = () => {}) {
       return {fileId:meta.id, name:meta.name, version:meta.version, canEdit:Boolean(meta.capabilities?.canEdit),
         view:view.value, ...(validChart ? {chart:{...validChart}} : {})};
     },
-    reset() { override = null; chartDraft = null; clear(); },
+    reset() {
+      override = null;
+      chartDraft = null;
+      nameFilter.value = '';
+      showFileChoices();
+      clear();
+    },
     show(result) {
       if (result.meta.id !== sourceId || result.meta.name !== sourceName) return;
       if (chartDraft && current?.meta.version !== result.meta.version) {
