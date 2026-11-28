@@ -4,7 +4,8 @@ import {TEST_FILE} from './core.js?v=0.14.0';
 const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
 const timestamp = /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 const dayFormat = new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'});
-const statusOrder = ['Просрочено', 'Сегодня', 'Скоро'];
+const statusNames = {overdue:'Просрочено', today:'Сегодня', soon:'Скоро'};
+const statusOrder = Object.values(statusNames);
 
 function localDay(date) {
   return [String(date.getFullYear()).padStart(4, '0'), String(date.getMonth() + 1).padStart(2, '0'),
@@ -35,16 +36,18 @@ export function attentionStatus(date, now) {
   if (!date || date.invalid) return null;
   const today = localDay(now);
   const dueDay = date.day ?? localDay(new Date(date.instant));
-  if (date.instant != null ? date.instant <= now.getTime() : dueDay < today) return 'Просрочено';
-  if (dueDay === today) return 'Сегодня';
+  if (date.instant != null ? date.instant <= now.getTime() : dueDay < today) return statusNames.overdue;
+  if (dueDay === today) return statusNames.today;
   const end = new Date(now);
   end.setDate(end.getDate() + 7);
-  return dueDay <= localDay(end) ? 'Скоро' : null;
+  return dueDay <= localDay(end) ? statusNames.soon : null;
 }
 
 export function initAttention(panel, onOpen) {
   const list = panel.querySelector('ul');
-  const state = panel.querySelector('[role=status]');
+  const filter = panel.querySelector('#today-attention-filter');
+  const empty = panel.querySelector('#today-attention-empty');
+  const state = panel.querySelector('[role=status]:not(#today-attention-empty)');
   let sources = new Map(), timer;
   const dates = new Map(), failed = new Set(), pending = new Map();
 
@@ -77,7 +80,11 @@ export function initAttention(panel, onOpen) {
       a.day.localeCompare(b.day) || (a.date.instant ?? -Infinity) - (b.date.instant ?? -Infinity) ||
       sources.get(a.id).localeCompare(sources.get(b.id), 'ru'));
     list.replaceChildren();
-    for (const {id, date, status} of rows) {
+    const selected = statusNames[filter.value];
+    const visible = selected ? rows.filter(row => row.status === selected) : rows;
+    empty.hidden = !rows.length || visible.length > 0;
+    empty.textContent = empty.hidden ? '' : 'Среди прочитанных заметок нет сроков в группе «' + selected + '».';
+    for (const {id, date, status} of visible) {
       const item = document.createElement('li');
       const link = document.createElement('a'), time = document.createElement('time');
       const name = sources.get(id);
@@ -159,12 +166,14 @@ export function initAttention(panel, onOpen) {
     render();
     return (await Promise.all(reads)).every(Boolean);
   }
-  function clear() {
+  function clear({preserveFilter = false} = {}) {
+    if (!preserveFilter) filter.value = '';
     dates.clear();
     failed.clear();
     pending.clear();
     render();
   }
+  filter.addEventListener('change', render);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
   window.addEventListener('focus', render);
   return {setSources, show, unavailable, refresh, clear};
